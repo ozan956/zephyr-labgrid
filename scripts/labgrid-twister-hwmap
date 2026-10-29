@@ -11,6 +11,11 @@ Tags read from the place:
                     resolved against --env-dir. Falls back to --env.
   zephyr_fixtures   comma separated Twister fixtures, e.g. gpio_loopback,i2c_bus
   zephyr_flash_timeout  seconds, default 120
+  zephyr_flash_before   true/false; flash before opening the console. Needed
+                    when the console port is also the flash port (ESP32 with a
+                    USB-UART bridge).
+  zephyr_pty_args   comma separated extra arguments for labgrid-pty, e.g.
+                    --reset-rts for boards whose reset line is wired to RTS.
 
 Usage:
   labgrid-twister-hwmap [-x COORDINATOR] [--env FILE] [--env-dir DIR]
@@ -88,6 +93,10 @@ def main():
             print(f'warning: environment file {env} for place {name} does not exist',
                   file=sys.stderr)
 
+        pty = f'{args.pty},-p,{name},-e,{env}'
+        pty_args = place.tags.get('zephyr_pty_args')
+        if pty_args:
+            pty += ',' + ','.join(a.strip() for a in pty_args.split(',') if a.strip())
         entry = {
             'connected': True,
             'id': name,
@@ -95,9 +104,12 @@ def main():
             'product': 'labgrid',
             'runner': 'labgrid',
             'runner_params': [f'--dev-id={name}', f'--env={env}'],
-            'serial_pty': f'{args.pty},-p,{name},-e,{env}',
+            'serial_pty': pty,
             'flash_timeout': int(place.tags.get('zephyr_flash_timeout', 120)),
         }
+        flash_before = place.tags.get('zephyr_flash_before', '').lower()
+        if flash_before in ('1', 'true', 'yes'):
+            entry['flash_before'] = True
         fixtures = place.tags.get('zephyr_fixtures')
         if fixtures:
             entry['fixtures'] = [f.strip() for f in fixtures.split(',') if f.strip()]
