@@ -1,0 +1,21 @@
+# Same board, but flashed with STM32CubeProgrammer on the exporter instead
+# of OpenOCD. Needs a USBFlashableDevice resource for the ST-Link and
+# STM32_Programmer_CLI installed on the exporter host.
+#
+# FlashScriptDriver takes the script from the images section (path relative
+# to this file). The runner copies the Zephyr image to the exporter and
+# replaces {image} with its path there. {device.path} is filled in by labgrid.
+images:
+  flash-script: stm32cubeprog-flash.sh
+targets:
+  main:
+    resources:
+      RemotePlace:
+        name: !template $LG_PLACE
+    drivers:
+      SerialDriver: {}
+      FlashScriptDriver:
+        script: flash-script
+        args:
+          - "{device.path}"
+          - "{image}"
