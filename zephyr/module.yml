@@ -1,0 +1,5 @@
+name: zephyr-labgrid
+build:
+  cmake: .
+runners:
+  - file: scripts/labgrid_runner.py
