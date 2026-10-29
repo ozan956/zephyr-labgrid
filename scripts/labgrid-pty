@@ -94,16 +94,47 @@ def main():
     out = sys.stdout.buffer
     log = open(args.logfile, 'ab') if args.logfile else None
 
+    # Fast path: talk to the pyserial object of a SerialDriver directly.
+    # ConsoleProtocol.read(timeout=...) sets serial.timeout on every call and
+    # pyserial's RFC2217 class renegotiates all port settings with ser2net
+    # each time, which costs round trips and can lose bytes at high poll
+    # rates. labgrid drivers are also not thread safe, while pyserial's
+    # read and write may run from two threads.
+    ser = getattr(console, 'serial', None)
+    if ser is not None:
+        ser.timeout = 0.1
+
+        def read_chunk():
+            return ser.read(max(1, ser.in_waiting))
+
+        def write_chunk(data):
+            ser.write(data)
+    else:
+        # Generic ConsoleProtocol: serialize access, labgrid drivers keep a
+        # global @step stack that breaks when two threads use them.
+        console_lock = threading.Lock()
+
+        def read_chunk():
+            try:
+                with console_lock:
+                    return console.read(size=1, timeout=0.1, max_size=4096)
+            except TIMEOUT:
+                return b''
+
+        def write_chunk(data):
+            with console_lock:
+                console.write(data)
+
     def reader():
         while not stop.is_set():
             try:
-                data = console.read(size=1, timeout=0.2, max_size=4096)
-            except TIMEOUT:
-                continue
+                data = read_chunk()
             except Exception as e:  # connection lost: stop, do not spin
                 failure.append(f'console read failed: {type(e).__name__}: {e}')
                 stop.set()
                 return
+            if not data:
+                continue
             out.write(data)
             out.flush()
             if log:
@@ -133,7 +164,7 @@ def main():
                 if not data:
                     break
                 try:
-                    console.write(data)
+                    write_chunk(data)
                 except Exception as e:
                     # Keep the console alive: a lost connection shows up in
                     # the reader. Report the first failed write once.

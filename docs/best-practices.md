@@ -44,6 +44,17 @@ STM32F746G-DISCO on a local exporter.
 
 ## Console bridge
 
+- `labgrid-pty` reads and writes the pyserial object of the SerialDriver
+  directly instead of calling `ConsoleProtocol.read(timeout=...)`. Every
+  such call sets `serial.timeout`, and pyserial's RFC2217 class then
+  renegotiates all port settings with ser2net. At a high poll rate this
+  costs round trips and loses bytes; it also made typed shell commands
+  disappear on both test boards. Keep this in mind for your own labgrid
+  scripts that poll a remote console in a tight loop.
+- labgrid drivers are not thread safe. The `@step` decorator keeps a
+  global stack and asserts when two threads use a driver at the same time.
+  Do not call a driver from a reader thread and a writer thread at once.
+
 - `labgrid-pty` exits when its stdin closes. When you test it by hand,
   keep stdin open (for example `sleep 60 | labgrid-pty ...`) or run it in a
   terminal. Twister keeps the pty open for the whole test.
