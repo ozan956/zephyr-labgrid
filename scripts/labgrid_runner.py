@@ -14,7 +14,8 @@ Supported labgrid drivers:
   USB loaders, ...): the runner calls ``load(image)``.
 - ``FlashScriptDriver``: the runner copies the image to the exporter and
   runs the driver's script with ``{image}`` in ``args`` replaced by the
-  remote path of the image.
+  remote path of the image and ``{address}`` by the flash offset from the
+  build configuration (for raw .bin images).
 """
 
 import os
@@ -120,17 +121,46 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                f'in {self.env_file}; check the drivers section and the '
                                f'resources of place "{self.place}"') from None
 
+    def _flash_address(self) -> str:
+        """Flash offset of the image as hex string, from the build config.
+
+        Same rule as Zephyr's own runners: CONFIG_FLASH_BASE_ADDRESS plus
+        CONFIG_FLASH_LOAD_OFFSET when the build has one. For raw .bin images
+        the flashing tool needs this; .hex and .elf carry their own address.
+        """
+        conf = self.build_conf
+        try:
+            if 'CONFIG_FLASH_BASE_ADDRESS' in conf:
+                return hex(self.flash_address_from_build_conf(conf))
+            # Builds without CONFIG_FLASH_BASE_ADDRESS (Espressif SoCs) take the
+            # offset from the devicetree, same as soc/espressif/common/CMakeLists.txt:
+            # the boot partition for simple boot, else the chosen code partition.
+            if conf.getboolean('CONFIG_ESP_SIMPLE_BOOT'):
+                node = conf.edt.label2node['boot_partition']
+            else:
+                node = conf.edt.chosen_node('zephyr,code-partition')
+            return hex(node.regs[0].addr)
+        except Exception as e:
+            raise RuntimeError('environment uses {address} but the flash address '
+                               f'could not be read from the build: {e}') from e
+
     def _flash_with_script(self, drv, image):
         from labgrid.util.managedfile import ManagedFile
 
         mf = ManagedFile(image, drv.device)
         mf.sync_to_resource()
         remote_image = mf.get_remote_path()
-        if any('{image}' in a for a in drv.args):
-            args = [a.replace('{image}', remote_image) for a in drv.args]
-        else:
+        subst = {'{image}': remote_image}
+        if any('{address}' in a for a in drv.args):
+            subst['{address}'] = self._flash_address()
+        args = []
+        for a in drv.args:
+            for key, value in subst.items():
+                a = a.replace(key, value)
+            args.append(a)
+        if '{image}' not in ''.join(drv.args):
             # no placeholder: pass the image as the last argument
-            args = list(drv.args) + [remote_image]
+            args.append(remote_image)
         drv.flash(args=args, timeout=self.timeout)
 
     def _reset_target(self, target):
