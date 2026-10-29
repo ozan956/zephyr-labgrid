@@ -2,17 +2,25 @@
 """West runner that flashes through a labgrid place.
 
 The runner is a thin client: it resolves a labgrid environment (``--env`` or
-``$LG_ENV``), points it at a place (``--dev-id`` or ``$LG_PLACE``) and asks the
-target's BootstrapProtocol driver to load the image. The actual flashing tool
-(OpenOCD, pyOCD, a vendor script via FlashScriptDriver, ...) runs wherever the
-labgrid exporter decides, usually on the exporter host next to the probe.
+``$ZEPHYR_LABGRID_ENV``), points it at a place (``--dev-id`` or ``$LG_PLACE``)
+and asks the flash driver of the target to load the image. The actual
+flashing tool (OpenOCD, pyOCD, a vendor tool behind FlashScriptDriver, ...)
+runs wherever the labgrid exporter decides, usually on the exporter host
+next to the probe.
+
+Supported labgrid drivers:
+
+- any driver implementing ``BootstrapProtocol`` (OpenOCDDriver, DFUDriver,
+  USB loaders, ...): the runner calls ``load(image)``.
+- ``FlashScriptDriver``: the runner copies the image to the exporter and
+  runs the driver's script with ``{image}`` in ``args`` replaced by the
+  remote path of the image.
 """
 
 import os
-import sys
 from pathlib import Path
 
-from runners.core import FileType, RunnerCaps, RunnerConfig, ZephyrBinaryRunner
+from runners.core import RunnerCaps, RunnerConfig, ZephyrBinaryRunner
 
 
 class LabgridBinaryRunner(ZephyrBinaryRunner):
@@ -44,10 +52,12 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     @classmethod
     def do_add_parser(cls, parser):
         parser.add_argument('--env', default=None,
-                            help='labgrid environment YAML (defaults to $ZEPHYR_LABGRID_ENV, then $LG_ENV)')
+                            help='labgrid environment YAML (defaults to '
+                                 '$ZEPHYR_LABGRID_ENV, then $LG_ENV)')
         parser.add_argument('--driver', default=None,
-                            help='name of the BootstrapProtocol driver to use '
-                                 '(default: the only/first one on the target)')
+                            help='name of the labgrid driver to flash with '
+                                 '(default: the BootstrapProtocol driver, '
+                                 'else the FlashScriptDriver of the target)')
         parser.add_argument('--power-cycle', action='store_true',
                             help='power cycle the place before flashing '
                                  '(needs a PowerProtocol driver)')
@@ -63,7 +73,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                     or os.environ.get('LG_ENV'))
         place = args.dev_id or os.environ.get('LG_PLACE')
         if not env_file:
-            raise ValueError('labgrid runner needs --env, $ZEPHYR_LABGRID_ENV or $LG_ENV')
+            raise ValueError('labgrid runner needs --env, $ZEPHYR_LABGRID_ENV '
+                             'or $LG_ENV')
         if not place:
             raise ValueError('labgrid runner needs --dev-id or $LG_PLACE')
         return LabgridBinaryRunner(cfg, env_file=env_file, place=place,
@@ -78,6 +89,49 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             if candidate and Path(candidate).is_file():
                 return candidate
         raise RuntimeError('no image found in build directory')
+
+    def _get_flasher(self, target):
+        """Return (driver, kind) where kind is 'bootstrap' or 'script'."""
+        from labgrid.driver import FlashScriptDriver
+        from labgrid.driver.common import Driver
+        from labgrid.exceptions import NoDriverFoundError
+
+        if self.driver_name:
+            try:
+                drv = target.get_driver(Driver, name=self.driver_name)
+            except NoDriverFoundError:
+                raise RuntimeError(f'labgrid driver "{self.driver_name}" not found '
+                                   f'in {self.env_file}') from None
+            if isinstance(drv, FlashScriptDriver):
+                return drv, 'script'
+            if hasattr(drv, 'load'):
+                return drv, 'bootstrap'
+            raise RuntimeError(f'labgrid driver "{self.driver_name}" can not flash '
+                               '(needs BootstrapProtocol or FlashScriptDriver)')
+
+        try:
+            return target.get_driver('BootstrapProtocol'), 'bootstrap'
+        except NoDriverFoundError:
+            pass
+        try:
+            return target.get_driver('FlashScriptDriver'), 'script'
+        except NoDriverFoundError:
+            raise RuntimeError('no flash driver (BootstrapProtocol or FlashScriptDriver) '
+                               f'in {self.env_file}; check the drivers section and the '
+                               f'resources of place "{self.place}"') from None
+
+    def _flash_with_script(self, drv, image):
+        from labgrid.util.managedfile import ManagedFile
+
+        mf = ManagedFile(image, drv.device)
+        mf.sync_to_resource()
+        remote_image = mf.get_remote_path()
+        if any('{image}' in a for a in drv.args):
+            args = [a.replace('{image}', remote_image) for a in drv.args]
+        else:
+            # no placeholder: pass the image as the last argument
+            args = list(drv.args) + [remote_image]
+        drv.flash(args=args, timeout=self.timeout)
 
     def _reset_target(self, target):
         """Best effort reset: ResetProtocol, then PowerProtocol, else rely on
@@ -97,6 +151,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     def do_run(self, command, **kwargs):
         try:
             from labgrid import Environment
+            from labgrid.exceptions import NoDriverFoundError, NoResourceFoundError
         except ImportError as e:
             raise RuntimeError('labgrid runner needs the labgrid python package '
                                'in the environment running west') from e
@@ -106,20 +161,37 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
         # labgrid environment files refer to the place as !template $LG_PLACE
         os.environ['LG_PLACE'] = self.place
-        env = Environment(config_file=self.env_file)
-        target = env.get_target()
         try:
-            if self.power_cycle:
-                power = target.get_driver('PowerProtocol')
-                power.cycle()
+            env = Environment(config_file=self.env_file)
+            target = env.get_target()
+        except Exception as e:
+            raise RuntimeError(f'could not load labgrid environment {self.env_file}: '
+                               f'{e}') from e
 
-            flasher = target.get_driver('BootstrapProtocol', name=self.driver_name)
-            if self.timeout is not None and hasattr(flasher, 'interface'):
-                flasher.interface.timeout = self.timeout
-            flasher.load(image)
-            target.deactivate(flasher)
+        try:
+            try:
+                if self.power_cycle:
+                    try:
+                        power = target.get_driver('PowerProtocol')
+                    except NoDriverFoundError:
+                        raise RuntimeError('--power-cycle needs a PowerProtocol driver '
+                                           f'in {self.env_file}') from None
+                    power.cycle()
 
-            if self.reset:
-                self._reset_target(target)
+                flasher, kind = self._get_flasher(target)
+                if self.timeout is not None and hasattr(flasher, 'interface'):
+                    flasher.interface.timeout = self.timeout
+                if kind == 'bootstrap':
+                    flasher.load(image)
+                else:
+                    self._flash_with_script(flasher, image)
+                target.deactivate(flasher)
+
+                if self.reset:
+                    self._reset_target(target)
+            except NoResourceFoundError as e:
+                raise RuntimeError(
+                    f'labgrid place "{self.place}" has no matching resource: {e}. '
+                    'Is the place acquired by you and the exporter running?') from e
         finally:
             target.cleanup()
