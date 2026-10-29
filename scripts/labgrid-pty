@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Bridge a labgrid console to stdin/stdout.
+
+Intended as Twister's ``serial_pty`` script (and the pytest-twister-harness
+``--device-serial-pty``): Twister starts this with a pty on its stdio and
+talks to it as if it were a serial port. We forward everything to the
+console driver of the labgrid target.
+
+Usage: labgrid-pty [-e ENV] [-p PLACE] [-b BAUD]
+  ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV), PLACE defaults to $LG_PLACE
+"""
+
+import argparse
+import os
+import select
+import signal
+import sys
+import threading
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('-e', '--env', default=os.environ.get('ZEPHYR_LABGRID_ENV') or os.environ.get('LG_ENV'))
+    parser.add_argument('-p', '--place', default=os.environ.get('LG_PLACE'))
+    parser.add_argument('-l', '--logfile', default=None,
+                        help='also append raw console output to this file')
+    args = parser.parse_args()
+    if not args.env or not args.place:
+        parser.error('need --env/$LG_ENV and --place/$LG_PLACE')
+
+    os.environ['LG_PLACE'] = args.place
+    from labgrid import Environment
+
+    if os.environ.get('LG_PTY_NO_PURGE'):
+        # Workaround for ser2net 4.6.0 (Ubuntu 24.04) never answering the
+        # RFC2217 PURGE request, see labgrid issue #1396. pyserial would
+        # otherwise time out in open(). Disable until ser2net is upgraded.
+        import serial.rfc2217
+        serial.rfc2217.Serial.reset_input_buffer = lambda self: None
+        serial.rfc2217.Serial.reset_output_buffer = lambda self: None
+
+    env = Environment(config_file=args.env)
+    target = env.get_target()
+    console = target.get_driver('ConsoleProtocol')
+
+    stop = threading.Event()
+    out = sys.stdout.buffer
+    log = open(args.logfile, 'ab') if args.logfile else None
+
+    def reader():
+        while not stop.is_set():
+            try:
+                data = console.read(size=1, timeout=0.2, max_size=4096)
+            except Exception:  # timeout -> keep polling
+                continue
+            if data:
+                out.write(data)
+                out.flush()
+                if log:
+                    log.write(data)
+                    log.flush()
+
+    def on_term(signum, frame):
+        stop.set()
+
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+    signal.signal(signal.SIGHUP, on_term)
+
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
+
+    stdin_fd = sys.stdin.fileno()
+    try:
+        while not stop.is_set():
+            r, _, _ = select.select([stdin_fd], [], [], 0.2)
+            if stdin_fd in r:
+                try:
+                    data = os.read(stdin_fd, 4096)
+                except OSError:
+                    break
+                if not data:
+                    break
+                console.write(data)
+    finally:
+        stop.set()
+        t.join(timeout=1.0)
+        try:
+            target.cleanup()
+        finally:
+            if log:
+                log.close()
+
+
+if __name__ == '__main__':
+    main()
