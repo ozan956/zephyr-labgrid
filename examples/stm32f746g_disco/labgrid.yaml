@@ -1,0 +1,18 @@
+# labgrid environment used by `west flash -r labgrid` and `labgrid-pty`.
+# The place name comes from LG_PLACE, which the runner sets from --dev-id.
+targets:
+  main:
+    resources:
+      RemotePlace:
+        name: !template $LG_PLACE
+    drivers:
+      SerialDriver: {}
+      OpenOCDDriver:
+        board_config: stm32f746g-disco.cfg
+        load_commands:
+          - init
+          - reset halt
+          - flash write_image erase {filename}
+          - verify_image {filename}
+          - reset run
+          - shutdown

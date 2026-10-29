@@ -1,0 +1,13 @@
+# Twister hardware map for one board behind labgrid.
+# The labgrid environment file is passed explicitly; adjust the path.
+# LG_COORDINATOR comes from the environment of the twister process.
+- connected: true
+  id: stm32f746g-disco            # must be set, otherwise twister drops runner_params
+  platform: stm32f746g_disco/stm32f746xx
+  product: labgrid
+  runner: labgrid
+  runner_params:
+    - --dev-id=stm32f746g-disco
+    - --env=/home/odurgut/work/zephyr-labgrid/zephyr-labgrid/examples/stm32f746g_disco/labgrid.yaml
+  serial_pty: "labgrid-pty,-p,stm32f746g-disco,-e,/home/odurgut/work/zephyr-labgrid/zephyr-labgrid/examples/stm32f746g_disco/labgrid.yaml"
+  flash_timeout: 120
