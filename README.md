@@ -1,7 +1,19 @@
 # zephyr-labgrid
 
-Experimental Zephyr module that lets `west flash` and Twister use a board
-behind a [labgrid](https://github.com/labgrid-project/labgrid) exporter.
+zephyr-labgrid is an experimental Zephyr module that lets `west flash` and
+Twister use boards connected to a [labgrid](https://github.com/labgrid-project/labgrid)
+exporter. It adds a `labgrid` west runner and a `labgrid-pty` console bridge.
+No changes to Zephyr or labgrid are needed.
+
+Status: experimental. Tested with Zephyr main (October 2026) and labgrid
+master on an STM32F746G-DISCO with its on-board ST-Link, using Twister's
+console, ztest and pytest harnesses.
+
+Documentation: [docs/](docs/README.md)
+
+- [For Zephyr developers](docs/zephyr-developer.md)
+- [For lab owners](docs/lab-owner.md)
+- [Best practices](docs/best-practices.md)
 
 Parts:
 
