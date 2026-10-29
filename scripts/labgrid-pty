@@ -7,8 +7,11 @@ Intended as Twister's ``serial_pty`` script (and the pytest-twister-harness
 talks to it as if it were a serial port. We forward everything to the
 console driver of the labgrid target.
 
-Usage: labgrid-pty [-e ENV] [-p PLACE] [-b BAUD]
-  ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV), PLACE defaults to $LG_PLACE
+Usage: labgrid-pty [-e ENV] [-p PLACE] [-l LOGFILE]
+  ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV)
+  PLACE defaults to $LG_PLACE
+
+Exit codes: 0 on stdin EOF or SIGTERM, 1 on a labgrid error, 2 on usage.
 """
 
 import argparse
@@ -19,18 +22,29 @@ import sys
 import threading
 
 
+def die(msg, code=1):
+    print(f'labgrid-pty: {msg}', file=sys.stderr, flush=True)
+    sys.exit(code)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('-e', '--env', default=os.environ.get('ZEPHYR_LABGRID_ENV') or os.environ.get('LG_ENV'))
+    parser.add_argument('-e', '--env', default=os.environ.get('ZEPHYR_LABGRID_ENV')
+                        or os.environ.get('LG_ENV'))
     parser.add_argument('-p', '--place', default=os.environ.get('LG_PLACE'))
     parser.add_argument('-l', '--logfile', default=None,
                         help='also append raw console output to this file')
     args = parser.parse_args()
     if not args.env or not args.place:
-        parser.error('need --env/$LG_ENV and --place/$LG_PLACE')
+        parser.error('need --env/$ZEPHYR_LABGRID_ENV and --place/$LG_PLACE')
 
     os.environ['LG_PLACE'] = args.place
-    from labgrid import Environment
+    try:
+        from labgrid import Environment
+        from labgrid.exceptions import NoDriverFoundError, NoResourceFoundError
+        from pexpect import TIMEOUT
+    except ImportError as e:
+        die(f'python package missing: {e}')
 
     if os.environ.get('LG_PTY_NO_PURGE'):
         # Workaround for ser2net 4.6.0 (Ubuntu 24.04) never answering the
@@ -40,11 +54,20 @@ def main():
         serial.rfc2217.Serial.reset_input_buffer = lambda self: None
         serial.rfc2217.Serial.reset_output_buffer = lambda self: None
 
-    env = Environment(config_file=args.env)
-    target = env.get_target()
-    console = target.get_driver('ConsoleProtocol')
+    try:
+        env = Environment(config_file=args.env)
+        target = env.get_target()
+        console = target.get_driver('ConsoleProtocol')
+    except NoResourceFoundError as e:
+        die(f'place "{args.place}" has no matching resource: {e}. '
+            'Is the place acquired by you and the exporter running?')
+    except NoDriverFoundError:
+        die(f'no ConsoleProtocol driver (e.g. SerialDriver) in {args.env}')
+    except Exception as e:
+        die(f'could not open console of place "{args.place}": {e}')
 
     stop = threading.Event()
+    failure = []
     out = sys.stdout.buffer
     log = open(args.logfile, 'ab') if args.logfile else None
 
@@ -52,14 +75,17 @@ def main():
         while not stop.is_set():
             try:
                 data = console.read(size=1, timeout=0.2, max_size=4096)
-            except Exception:  # timeout -> keep polling
+            except TIMEOUT:
                 continue
-            if data:
-                out.write(data)
-                out.flush()
-                if log:
-                    log.write(data)
-                    log.flush()
+            except Exception as e:  # connection lost: stop, do not spin
+                failure.append(f'console read failed: {e}')
+                stop.set()
+                return
+            out.write(data)
+            out.flush()
+            if log:
+                log.write(data)
+                log.flush()
 
     def on_term(signum, frame):
         stop.set()
@@ -82,7 +108,11 @@ def main():
                     break
                 if not data:
                     break
-                console.write(data)
+                try:
+                    console.write(data)
+                except Exception as e:
+                    failure.append(f'console write failed: {e}')
+                    break
     finally:
         stop.set()
         t.join(timeout=1.0)
@@ -91,6 +121,9 @@ def main():
         finally:
             if log:
                 log.close()
+
+    if failure:
+        die(failure[0])
 
 
 if __name__ == '__main__':
