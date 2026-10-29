@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Generate a Twister hardware map from labgrid places.
+
+Every place with a ``zephyr_platform`` tag becomes one DUT entry that flashes
+with the ``labgrid`` west runner and uses ``labgrid-pty`` for the console.
+
+Tags read from the place:
+  zephyr_platform   Zephyr board target, e.g. stm32f746g_disco/stm32f746xx (required)
+  zephyr_env        labgrid environment file for this place; relative names are
+                    resolved against --env-dir. Falls back to --env.
+  zephyr_fixtures   comma separated Twister fixtures, e.g. gpio_loopback,i2c_bus
+  zephyr_flash_timeout  seconds, default 120
+
+Usage:
+  labgrid-twister-hwmap [-x COORDINATOR] [--env FILE] [--env-dir DIR]
+                        [--force-env FILE] [--pty NAME] [--hooks DIR] [-o hwmap.yaml]
+
+With --hooks DIR, a pre and post script per place is written there. They
+acquire and release the place. Twister passes no arguments to these scripts,
+so one small file per place is the only way to make them place specific.
+"""
+
+import argparse
+import os
+import stat
+import sys
+
+import yaml
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('-x', '--coordinator',
+                        default=os.environ.get('LG_COORDINATOR', '127.0.0.1:20408'),
+                        help='coordinator HOST[:PORT] (default $LG_COORDINATOR)')
+    parser.add_argument('--env', default=os.environ.get('ZEPHYR_LABGRID_ENV'),
+                        help='labgrid environment file used when a place has no '
+                             'zephyr_env tag (default $ZEPHYR_LABGRID_ENV)')
+    parser.add_argument('--force-env', default=None, metavar='FILE',
+                        help='use this environment file for every place and '
+                             'ignore zephyr_env tags')
+    parser.add_argument('--env-dir', default=None,
+                        help='directory for relative zephyr_env tag values '
+                             '(default: directory of --env)')
+    parser.add_argument('--pty', default='labgrid-pty',
+                        help='console bridge command (default: labgrid-pty from PATH)')
+    parser.add_argument('--hooks', default=None, metavar='DIR',
+                        help='write per place acquire/release scripts into DIR and '
+                             'reference them as pre_script/post_script')
+    parser.add_argument('--include-unavailable', action='store_true',
+                        help='also list places that are acquired by someone else')
+    parser.add_argument('-o', '--output', default='-', help='output file (default stdout)')
+    args = parser.parse_args()
+
+    try:
+        from labgrid.remote.client import start_session
+    except ImportError:
+        sys.exit('labgrid-twister-hwmap: python package labgrid is missing')
+
+    try:
+        session = start_session(args.coordinator)
+    except Exception as e:
+        sys.exit(f'labgrid-twister-hwmap: can not reach coordinator {args.coordinator}: {e}')
+
+    entries = []
+    skipped = []
+    for name in sorted(session.places):
+        place = session.places[name]
+        platform = place.tags.get('zephyr_platform')
+        if not platform:
+            skipped.append(name)
+            continue
+        env = args.force_env or place.tags.get('zephyr_env') or args.env
+        if not env:
+            sys.exit(f'labgrid-twister-hwmap: place {name} has no zephyr_env tag '
+                     'and no --env given')
+        if not os.path.isabs(env):
+            env_dir = args.env_dir or (os.path.dirname(os.path.abspath(args.env))
+                                       if args.env else None)
+            if env_dir is None:
+                sys.exit(f'labgrid-twister-hwmap: zephyr_env tag of {name} is the '
+                         f'relative path "{env}"; give --env-dir or --env')
+            env = os.path.join(env_dir, env)
+        env = os.path.abspath(env)
+        if not os.path.isfile(env):
+            print(f'warning: environment file {env} for place {name} does not exist',
+                  file=sys.stderr)
+
+        entry = {
+            'connected': True,
+            'id': name,
+            'platform': platform,
+            'product': 'labgrid',
+            'runner': 'labgrid',
+            'runner_params': [f'--dev-id={name}', f'--env={env}'],
+            'serial_pty': f'{args.pty},-p,{name},-e,{env}',
+            'flash_timeout': int(place.tags.get('zephyr_flash_timeout', 120)),
+        }
+        fixtures = place.tags.get('zephyr_fixtures')
+        if fixtures:
+            entry['fixtures'] = [f.strip() for f in fixtures.split(',') if f.strip()]
+        if place.acquired and not args.include_unavailable:
+            entry['notes'] = f'acquired by {place.acquired}'
+        if args.hooks:
+            entry['pre_script'] = write_hook(args.hooks, name, 'pre',
+                                             f'labgrid-client -x {args.coordinator} '
+                                             f'-p {name} acquire')
+            entry['post_script'] = write_hook(args.hooks, name, 'post',
+                                              f'labgrid-client -x {args.coordinator} '
+                                              f'-p {name} release')
+        entries.append(entry)
+
+    text = yaml.safe_dump(entries, sort_keys=False, default_flow_style=False)
+    header = (f'# Twister hardware map generated by labgrid-twister-hwmap from '
+              f'{args.coordinator}\n')
+    if args.output == '-':
+        sys.stdout.write(header + text)
+    else:
+        with open(args.output, 'w') as f:
+            f.write(header + text)
+        print(f'wrote {len(entries)} DUT(s) to {args.output}', file=sys.stderr)
+    if skipped:
+        print(f'skipped {len(skipped)} place(s) without zephyr_platform tag: '
+              f'{", ".join(skipped)}', file=sys.stderr)
+
+
+def write_hook(directory, place, kind, command):
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.abspath(os.path.join(directory, f'{place}-{kind}'))
+    with open(path, 'w') as f:
+        f.write('#!/bin/sh\n'
+                f'# generated by labgrid-twister-hwmap: {kind} script for {place}\n'
+                f'exec {command}\n')
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return path
+
+
+if __name__ == '__main__':
+    main()
