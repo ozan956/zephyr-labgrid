@@ -20,11 +20,28 @@ import select
 import signal
 import sys
 import threading
+import traceback
 
 
 def die(msg, code=1):
     print(f'labgrid-pty: {msg}', file=sys.stderr, flush=True)
     sys.exit(code)
+
+
+def reset_rts(console):
+    """Pulse RTS (EN on ESP32 dev kits) through the pyserial object of a
+    SerialDriver. Works over RFC2217 when ser2net forwards modem control."""
+    import time
+    ser = getattr(console, 'serial', None)
+    if ser is None:
+        die('--reset-rts needs a SerialDriver console')
+    try:
+        ser.dtr = False
+        ser.rts = True
+        time.sleep(0.1)
+        ser.rts = False
+    except Exception as e:
+        die(f'RTS reset failed: {e}')
 
 
 def main():
@@ -34,6 +51,9 @@ def main():
     parser.add_argument('-p', '--place', default=os.environ.get('LG_PLACE'))
     parser.add_argument('-l', '--logfile', default=None,
                         help='also append raw console output to this file')
+    parser.add_argument('--reset-rts', action='store_true',
+                        help='pulse RTS after connecting to reset boards whose '
+                             'reset line is wired to RTS (USB-UART ESP32 kits)')
     args = parser.parse_args()
     if not args.env or not args.place:
         parser.error('need --env/$ZEPHYR_LABGRID_ENV and --place/$LG_PLACE')
@@ -66,6 +86,9 @@ def main():
     except Exception as e:
         die(f'could not open console of place "{args.place}": {e}')
 
+    if args.reset_rts:
+        reset_rts(console)
+
     stop = threading.Event()
     failure = []
     out = sys.stdout.buffer
@@ -78,7 +101,7 @@ def main():
             except TIMEOUT:
                 continue
             except Exception as e:  # connection lost: stop, do not spin
-                failure.append(f'console read failed: {e}')
+                failure.append(f'console read failed: {type(e).__name__}: {e}')
                 stop.set()
                 return
             out.write(data)
@@ -98,6 +121,7 @@ def main():
     t.start()
 
     stdin_fd = sys.stdin.fileno()
+    write_warned = False
     try:
         while not stop.is_set():
             r, _, _ = select.select([stdin_fd], [], [], 0.2)
@@ -111,8 +135,13 @@ def main():
                 try:
                     console.write(data)
                 except Exception as e:
-                    failure.append(f'console write failed: {e}')
-                    break
+                    # Keep the console alive: a lost connection shows up in
+                    # the reader. Report the first failed write once.
+                    if not write_warned:
+                        write_warned = True
+                        print(f'labgrid-pty: console write failed: '
+                              f'{type(e).__name__}: {e}', file=sys.stderr, flush=True)
+                        traceback.print_exc(file=sys.stderr)
     finally:
         stop.set()
         t.join(timeout=1.0)
