@@ -6,8 +6,9 @@ exporter. It adds a `labgrid` west runner and a `labgrid-pty` console bridge.
 No changes to Zephyr or labgrid are needed.
 
 Status: experimental. Tested with Zephyr main (October 2026) and labgrid
-master on an STM32F746G-DISCO with its on-board ST-Link, using Twister's
-console, ztest and pytest harnesses.
+master on an STM32F746G-DISCO with its on-board ST-Link, flashing with
+OpenOCD and with STM32CubeProgrammer, using Twister's console, ztest and
+pytest harnesses.
 
 Documentation: [docs/](docs/README.md)
 
@@ -23,9 +24,12 @@ Parts:
   the exporter side.
 - `scripts/labgrid-pty`: console bridge for Twister's `serial_pty` /
   pytest-twister-harness `--device-serial-pty`.
+- `scripts/labgrid-twister-hwmap`: writes a Twister hardware map from the
+  `zephyr_*` tags of your labgrid places.
 - `CMakeLists.txt`: registers the `labgrid` runner in every build's
   `runners.yaml` (module CMake runs before `cmake/flash`).
-- `examples/stm32f746g_disco/`: labgrid environment, Twister hardware map.
+- `examples/stm32f746g_disco/`: labgrid environments (OpenOCD and
+  STM32CubeProgrammer), flash script, Twister hardware map.
 
 Usage:
 

@@ -82,7 +82,7 @@ Runner options after `--`:
 |---|---|
 | `--dev-id PLACE` | labgrid place name (default `$LG_PLACE`) |
 | `--env FILE` | labgrid environment file (default `$ZEPHYR_LABGRID_ENV`, then `$LG_ENV`) |
-| `--driver NAME` | which BootstrapProtocol driver to use when the target has more than one |
+| `--driver NAME` | labgrid driver name to flash with, when the environment has more than one |
 | `--power-cycle` | power cycle the place before flashing (needs a PowerProtocol driver) |
 | `--reset` / `--no-reset` | reset after flashing; best effort, see below |
 | `--file FILE`, `--file-type` | flash a different file than the build output |
@@ -90,7 +90,13 @@ Runner options after `--`:
 
 The runner picks `zephyr.hex` if it exists, then `zephyr.bin`, then
 `zephyr.elf`. What the flashing tool accepts depends on the driver in the
-environment file. OpenOCD takes all three.
+environment file. OpenOCD and STM32CubeProgrammer take all three.
+
+Which labgrid driver does the flashing is decided by the environment file:
+a `BootstrapProtocol` driver (OpenOCDDriver, DFUDriver, ...) is used when
+present, otherwise a `FlashScriptDriver` that runs a vendor tool on the
+exporter. You do not need to care unless the file has both; then pick one
+with `--driver`.
 
 Reset after flashing is best effort. The runner tries a ResetProtocol
 driver, then a PowerProtocol driver. If the place has neither, it relies on
@@ -114,8 +120,14 @@ Stop it with Ctrl-C.
 
 ## Run Twister on the board
 
-Twister needs a hardware map entry for the place. Your lab owner may give
-you one. The minimum is:
+Twister needs a hardware map entry for the place. Generate it from the
+labgrid tags, if your lab owner has set them:
+
+```sh
+labgrid-twister-hwmap -x lab-coordinator:20408 --env-dir /shared/labgrid-envs -o hwmap.yaml
+```
+
+Or write it by hand. The minimum is:
 
 ```yaml
 - connected: true

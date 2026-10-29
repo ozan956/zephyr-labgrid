@@ -60,6 +60,11 @@ STM32F746G-DISCO on a local exporter.
   `--file` with the right tool.
 - Select the right place only with `--dev-id`. Never put the place name
   into the environment file.
+- With `FlashScriptDriver`, let the script find the probe from
+  `{device.path}` on the exporter instead of hard coding serial numbers.
+  One script then serves every board of the family.
+- `FlashScriptDriver.script` is an image key, not a path. Put the script
+  into the `images:` section of the environment file.
 - When a board needs a power cycle before it can be flashed (stuck in a low
   power state, locked debug port), add a PowerProtocol driver to the place
   and use `--power-cycle` in `runner_params`.
@@ -80,6 +85,6 @@ STM32F746G-DISCO on a local exporter.
 
 - Only `flash` is implemented. `west debug` and `west attach` through
   labgrid are not supported.
-- No hardware map generator from labgrid tags yet.
-- Only `OpenOCDDriver` has been tested as the flash driver.
+- Only `OpenOCDDriver` and `FlashScriptDriver` with STM32CubeProgrammer
+  have been tested as flash drivers.
 - Twister's own DUT lock and labgrid's place lock are not connected.

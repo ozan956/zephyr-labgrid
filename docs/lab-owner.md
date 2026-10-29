@@ -32,6 +32,18 @@ probes. For other probes check `labgrid/resource/udev.py` or use a generic
 
 Find the values with `udevadm info -q property -n /dev/ttyACM0`.
 
+If you want to flash with a vendor tool instead of OpenOCD (see step 3),
+also export the probe as a generic `USBFlashableDevice`. It is the same USB
+device, so use the same match plus the device type:
+
+```yaml
+  USBFlashableDevice:
+    match:
+      ID_SERIAL_SHORT: '066CFF505356867767051752'
+      SUBSYSTEM: 'usb'
+      DEVTYPE: 'usb_device'
+```
+
 If the board has a separate power switch (USB hub port, relay, PDU) add it
 too. Zephyr users benefit from `--power-cycle` and from `labgrid-client
 power cycle` when a board hangs.
@@ -83,11 +95,42 @@ today:
 |---|---|---|
 | `OpenOCDDriver` | openocd >= 0.11 | Works for ST-Link, CMSIS-DAP, J-Link with OpenOCD support. Uses the USB path, so several probes on one exporter are fine. Tested. |
 | `DFUDriver` | dfu-util | Boards with a DFU bootloader. |
-| `FlashScriptDriver` | anything | Runs your script on the exporter with the image path. Use it for nrfutil, esptool, STM32CubeProgrammer, J-Link Commander and other vendor tools. Not tested with this module yet. |
+| `FlashScriptDriver` | anything | Runs your script on the exporter. Use it for nrfutil, esptool, STM32CubeProgrammer, J-Link Commander and other vendor tools. Tested with STM32CubeProgrammer, see below. |
 | `PyOCDDriver` | pyocd | Pending in labgrid PR #1944. |
 
 The image file is copied to the exporter by labgrid before the tool runs,
 so the tool only needs to exist on the exporter.
+
+### Vendor tools through FlashScriptDriver
+
+`FlashScriptDriver` copies a script of yours to the exporter and runs it
+there. The runner copies the Zephyr image as well and replaces `{image}` in
+`args` with its path on the exporter. labgrid fills in `{device.path}`, the
+sysfs USB path of the probe, which the script can turn into a serial number.
+
+```yaml
+# labgrid-stm32cubeprog.yaml
+images:
+  flash-script: stm32cubeprog-flash.sh     # relative to this file
+targets:
+  main:
+    resources:
+      RemotePlace:
+        name: !template $LG_PLACE
+    drivers:
+      SerialDriver: {}
+      FlashScriptDriver:
+        script: flash-script
+        args:
+          - "{device.path}"
+          - "{image}"
+```
+
+`examples/stm32f746g_disco/stm32cubeprog-flash.sh` is a complete example.
+It reads the ST-Link serial from `/sys/bus/usb/devices/<path>/serial`, finds
+`STM32_Programmer_CLI` and runs it with `-c port=SWD sn=... -w <image> -v
+-rst`. Write the same kind of script for nrfutil, esptool or J-Link. Keep
+the script next to the environment file and put the tool on the exporter.
 
 Keep `SerialDriver` in the file. `labgrid-pty` uses the ConsoleProtocol
 driver it finds, and the runner does not touch it.
@@ -97,8 +140,21 @@ If you add a `PowerProtocol` or `ResetProtocol` driver, `--reset` and
 
 ## 4. Hand out hardware map entries
 
-Each place needs one entry. Generate them from your tags, by hand or with a
-small script over `labgrid-client -f json places`:
+Each place needs one entry. `labgrid-twister-hwmap` writes them from the
+tags of step 2:
+
+```sh
+labgrid-twister-hwmap -x lab-coordinator:20408 --env-dir /shared/labgrid-envs -o hwmap.yaml
+```
+
+Tags it reads: `zephyr_platform` (required), `zephyr_env` (file name,
+resolved against `--env-dir`), `zephyr_fixtures` (comma separated) and
+`zephyr_flash_timeout`. `--env FILE` is the fallback for places without a
+`zephyr_env` tag, `--force-env FILE` overrides the tag for every place. With `--hooks DIR` it also writes one acquire and
+one release script per place and references them as `pre_script` and
+`post_script`. Places that are acquired by someone get a `notes` line.
+
+The result looks like this:
 
 ```yaml
 - connected: true
