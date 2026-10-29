@@ -138,6 +138,33 @@ driver it finds, and the runner does not touch it.
 If you add a `PowerProtocol` or `ResetProtocol` driver, `--reset` and
 `--power-cycle` start to work.
 
+### Boards flashed over the console UART (ESP32 and friends)
+
+ESP32 dev kits with a USB-UART bridge have no debug probe. esptool flashes
+over the same serial port that is the console, and the bridge's DTR/RTS
+lines drive boot mode and reset. Three things follow:
+
+- Export the tty twice: as `USBSerialPort` for the console and as
+  `USBFlashableDevice` matched on `SUBSYSTEM: tty`, so the flash script
+  gets the device node as `{device.devnode}`.
+- The console must be closed while flashing. Tag the place with
+  `zephyr_flash_before=true`; Twister then flashes first and opens the
+  console afterwards.
+- After the console is opened the board has already booted, so the banner
+  would be lost. Tag the place with `zephyr_pty_args=--reset-rts`;
+  `labgrid-pty` then pulses RTS over RFC2217 right after connecting and the
+  board boots again into the open console.
+
+The image is a raw `.bin`, so the script also needs the flash offset. The
+runner fills `{address}` from the build: `CONFIG_FLASH_BASE_ADDRESS` plus
+`CONFIG_FLASH_LOAD_OFFSET` where those exist, otherwise the devicetree
+partition Zephyr's own esp32 runner uses. See
+`examples/esp32_devkitc/labgrid-esp32.yaml` and `esptool-flash.sh`.
+
+labgrid runs the script over ssh with a small PATH. Install esptool where
+the script can find it: on `PATH`, in `~/.local/bin`, or as a module of the
+system `python3`.
+
 ## 4. Hand out hardware map entries
 
 Each place needs one entry. `labgrid-twister-hwmap` writes them from the
@@ -148,8 +175,9 @@ labgrid-twister-hwmap -x lab-coordinator:20408 --env-dir /shared/labgrid-envs -o
 ```
 
 Tags it reads: `zephyr_platform` (required), `zephyr_env` (file name,
-resolved against `--env-dir`), `zephyr_fixtures` (comma separated) and
-`zephyr_flash_timeout`. `--env FILE` is the fallback for places without a
+resolved against `--env-dir`), `zephyr_fixtures` (comma separated),
+`zephyr_flash_timeout`, `zephyr_flash_before` (true/false) and
+`zephyr_pty_args` (comma separated extra arguments for `labgrid-pty`). `--env FILE` is the fallback for places without a
 `zephyr_env` tag, `--force-env FILE` overrides the tag for every place. With `--hooks DIR` it also writes one acquire and
 one release script per place and references them as `pre_script` and
 `post_script`. Places that are acquired by someone get a `notes` line.

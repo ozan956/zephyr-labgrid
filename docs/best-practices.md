@@ -65,6 +65,13 @@ STM32F746G-DISCO on a local exporter.
   One script then serves every board of the family.
 - `FlashScriptDriver.script` is an image key, not a path. Put the script
   into the `images:` section of the environment file.
+- Use `{address}` in the script args for raw `.bin` images. The runner
+  reads the offset from the build, so one environment file works for
+  simple boot and MCUboot layouts.
+- When console and flash share one UART (ESP32 with USB-UART), tag the
+  place with `zephyr_flash_before=true` and `zephyr_pty_args=--reset-rts`.
+  Without the RTS reset the boot banner is printed before the console is
+  open and console harness tests fail.
 - When a board needs a power cycle before it can be flashed (stuck in a low
   power state, locked debug port), add a PowerProtocol driver to the place
   and use `--power-cycle` in `runner_params`.
@@ -85,6 +92,6 @@ STM32F746G-DISCO on a local exporter.
 
 - Only `flash` is implemented. `west debug` and `west attach` through
   labgrid are not supported.
-- Only `OpenOCDDriver` and `FlashScriptDriver` with STM32CubeProgrammer
-  have been tested as flash drivers.
+- Flash drivers tested so far: `OpenOCDDriver`, `FlashScriptDriver` with
+  STM32CubeProgrammer and with esptool.
 - Twister's own DUT lock and labgrid's place lock are not connected.

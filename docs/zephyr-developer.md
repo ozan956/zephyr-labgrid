@@ -103,6 +103,10 @@ driver, then a PowerProtocol driver. If the place has neither, it relies on
 the flasher to reset the board. The example OpenOCD configuration ends with
 `reset run`, so this is fine in practice.
 
+Boards without a debug probe (ESP32 dev kits) are flashed over the console
+UART. Close `labgrid-pty` or `labgrid-client console` before `west flash`,
+otherwise esptool and the console fight over the port.
+
 ## Watch the console
 
 ```sh
@@ -116,7 +120,8 @@ usable by hand when you only want to see output:
 labgrid-pty -p stm32f746g-disco-1 | tee console.log
 ```
 
-Stop it with Ctrl-C.
+Stop it with Ctrl-C. `--reset-rts` pulses the RTS line after connecting,
+which resets ESP32 style boards so you see the boot banner.
 
 ## Run Twister on the board
 

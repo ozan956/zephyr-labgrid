@@ -6,9 +6,9 @@ exporter. It adds a `labgrid` west runner and a `labgrid-pty` console bridge.
 No changes to Zephyr or labgrid are needed.
 
 Status: experimental. Tested with Zephyr main (October 2026) and labgrid
-master on an STM32F746G-DISCO with its on-board ST-Link, flashing with
-OpenOCD and with STM32CubeProgrammer, using Twister's console, ztest and
-pytest harnesses.
+master on an STM32F746G-DISCO (on-board ST-Link, flashed with OpenOCD and
+with STM32CubeProgrammer) and on an ESP32-DevKitC (USB-UART bridge, flashed
+with esptool), using Twister's console, ztest and pytest harnesses.
 
 Documentation: [docs/](docs/README.md)
 
@@ -30,6 +30,8 @@ Parts:
   `runners.yaml` (module CMake runs before `cmake/flash`).
 - `examples/stm32f746g_disco/`: labgrid environments (OpenOCD and
   STM32CubeProgrammer), flash script, Twister hardware map.
+- `examples/esp32_devkitc/`: labgrid environment and esptool flash script
+  for a board whose console port is also the flash port.
 
 Usage:
 
