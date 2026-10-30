@@ -178,9 +178,14 @@ Tags it reads: `zephyr_platform` (required), `zephyr_env` (file name,
 resolved against `--env-dir`), `zephyr_fixtures` (comma separated),
 `zephyr_flash_timeout`, `zephyr_flash_before` (true/false) and
 `zephyr_pty_args` (comma separated extra arguments for `labgrid-pty`). `--env FILE` is the fallback for places without a
-`zephyr_env` tag, `--force-env FILE` overrides the tag for every place. With `--hooks DIR` it also writes one acquire and
-one release script per place and references them as `pre_script` and
-`post_script`. Places that are acquired by someone get a `notes` line.
+`zephyr_env` tag, `--force-env FILE` overrides the tag for every place.
+With `--acquire` the runner and `labgrid-pty` get `--acquire` and lock the
+place per test (see step 5). With `--hooks DIR` it instead writes one
+acquire and one release script per place and references them as
+`pre_script` and `post_script`. Places that are acquired by someone get a
+`notes` line. `--wait-console SECONDS` (default 30) is added to the runner
+for places that are flashed while the console is open, so the flash waits
+until `labgrid-pty` has the console.
 
 The result looks like this:
 
@@ -193,6 +198,7 @@ The result looks like this:
   runner_params:
     - --dev-id=stm32f746g-disco-1
     - --env=/shared/labgrid-stm32f7.yaml
+    - --wait-console=30
   serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-stm32f7.yaml"
   flash_timeout: 120
   fixtures: []
@@ -225,16 +231,27 @@ Two simple models that work:
 2. **CI user holds the places.** A CI account acquires all Zephyr places
    once; Twister runs under that account. Other users see the places as
    busy. Good for a dedicated test farm.
+3. **The tools lock per test.** Generate the map with
+   `labgrid-twister-hwmap --acquire`. `west flash` and `labgrid-pty` then
+   acquire the place when they start and release it when the last of them
+   exits. The tools on one host coordinate through a small lock directory
+   (`$TMPDIR/zephyr-labgrid-<uid>/`), so the flash does not release the
+   place while the console is still open. A place that a user acquired by
+   hand is never released by the tools. Between two tests the place is free
+   for a moment, so another user can take it; Twister then reports a flash
+   error for that test.
 
-Mixing both on the same places leads to `Flash error` or `Serial Device
-Error` in Twister when the place is taken. Reservations
-(`labgrid-client reserve`) can bridge the two models but need scripting.
+Mixing the first two on the same places leads to `Flash error` or `Serial
+Device Error` in Twister when the place is taken. Reservations
+(`labgrid-client reserve`) can bridge the models but need scripting.
 
 ## 6. Check the exporter host
 
 - ser2net 4.6.1 or newer. ser2net 4.6.0 (Ubuntu 24.04) never answers the
-  RFC2217 purge request, and pyserial times out on open. Until you upgrade,
-  tell users to set `LG_PTY_NO_PURGE=1`. See labgrid issue #1396.
+  RFC2217 purge request, and plain pyserial times out on open. `labgrid-pty`
+  detects this and continues without purge, at the cost of a one second
+  probe per host and day; `LG_PTY_NO_PURGE=1` skips the probe. See labgrid
+  issue #1396.
 - openocd 0.11 or newer so that USB path selection works with several
   probes on one host.
 - udev rules that give the exporter user access to the probes
@@ -249,6 +266,7 @@ Before handing a place to users, do the full loop once:
 ```sh
 export LG_COORDINATOR=...; export ZEPHYR_LABGRID_ENV=/shared/labgrid-stm32f7.yaml
 labgrid-client -p stm32f746g-disco-1 acquire
+labgrid-twister-check -p stm32f746g-disco-1 --tool openocd   # all lines ok?
 west build -b stm32f746g_disco samples/hello_world
 west flash -r labgrid -- --dev-id=stm32f746g-disco-1
 labgrid-pty -p stm32f746g-disco-1          # expect "Hello World!" after a reset

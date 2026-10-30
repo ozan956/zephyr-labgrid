@@ -41,6 +41,17 @@ STM32F746G-DISCO on a local exporter.
   environment. If you use them for acquire and release, keep them tiny and
   per place. Their exit codes are only logged, so a failed acquire shows up
   later as a flash or serial error. Check the Twister log, not the script.
+- `--acquire` on the runner and on `labgrid-pty` is the simpler way. Twister
+  starts both at the same time for boards that are flashed with the console
+  open, so the two tools share one lock: whoever acquires first writes a
+  marker in `$TMPDIR/zephyr-labgrid-<uid>/<coordinator>-<place>/`, every
+  tool registers its pid there, and the last one to exit releases the
+  place. labgrid-client's "already acquired" check runs before the
+  resources have arrived, so without this serialisation the second tool
+  saw a place with no resources.
+- Acquire and release go through the `labgrid-client` command, not the
+  client API. The coordinator accepts one session per process, and the
+  `RemotePlace` resource already opens one.
 
 ## Console bridge
 
@@ -54,6 +65,19 @@ STM32F746G-DISCO on a local exporter.
 - labgrid drivers are not thread safe. The `@step` decorator keeps a
   global stack and asserts when two threads use a driver at the same time.
   Do not call a driver from a reader thread and a writer thread at once.
+- Opening a remote console takes seconds (labgrid session, ssh, RFC2217
+  negotiation), and more under build load. Twister assumes the pty is
+  ready as soon as the process has started and flashes right away, so the
+  boot output was lost in a 1 in 5 case. `labgrid-pty` writes a ready
+  marker next to the lock files once the console is open, and
+  `west flash -r labgrid -- --wait-console=30` waits for it. The generated
+  hardware maps include the option.
+- The RFC2217 purge probe: pyserial sends two purge requests in `open()`
+  and waits 3 s for each answer. `labgrid-pty` sends the first one with a
+  1 s timeout; when it is not answered the host is remembered for a day
+  in the lock directory and no more purges are sent. `--purge on` restores
+  plain pyserial behaviour, `--purge off` (or `LG_PTY_NO_PURGE=1`) never
+  sends one.
 
 - `labgrid-pty` exits when its stdin closes. When you test it by hand,
   keep stdin open (for example `sleep 60 | labgrid-pty ...`) or run it in a
@@ -105,4 +129,5 @@ STM32F746G-DISCO on a local exporter.
   labgrid are not supported.
 - Flash drivers tested so far: `OpenOCDDriver`, `FlashScriptDriver` with
   STM32CubeProgrammer and with esptool.
-- Twister's own DUT lock and labgrid's place lock are not connected.
+- Twister's own DUT lock and labgrid's place lock are only connected
+  through `--acquire`; the place is free between two tests.

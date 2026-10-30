@@ -38,11 +38,22 @@ variable, which also works for an existing workspace:
 export ZEPHYR_EXTRA_MODULES=/path/to/zephyr-labgrid
 ```
 
-Also put the scripts on your `PATH` so Twister can find `labgrid-pty`:
+Also make the tools available so Twister can find `labgrid-pty`. Either
+put the scripts on your `PATH`:
 
 ```sh
 export PATH=/path/to/zephyr-labgrid/scripts:$PATH
 ```
+
+or install the package into the Python environment that runs west and
+twister:
+
+```sh
+pip install /path/to/zephyr-labgrid
+```
+
+Both give you `labgrid-pty`, `labgrid-twister-hwmap` and
+`labgrid-twister-check`.
 
 ## Set the labgrid environment
 
@@ -62,6 +73,22 @@ labgrid-client -p stm32f746g-disco-1 acquire
 ...
 labgrid-client -p stm32f746g-disco-1 release
 ```
+
+Or let the tools do it: `west flash -r labgrid -- --acquire` and
+`labgrid-pty --acquire` take the place while they run and give it back
+afterwards. A place you acquired by hand is left alone.
+
+## Check the setup
+
+```sh
+labgrid-twister-check -p stm32f746g-disco-1
+```
+
+prints one line per check: Python packages, tools on `PATH`, environment
+variables, coordinator, place and its tags, environment file and its
+drivers, flash tool on the exporter (`--tool esptool` for script based
+flashing), and the console. Add `--hwmap hwmap.yaml` to check a hardware map
+against the coordinator. Fix the `FAIL` lines before you run Twister.
 
 ## Flash a build
 
@@ -87,6 +114,8 @@ Runner options after `--`:
 | `--reset` / `--no-reset` | reset after flashing; best effort, see below |
 | `--file FILE`, `--file-type` | flash a different file than the build output |
 | `--timeout SECONDS` | wait time for labgrid resources |
+| `--acquire` | acquire the place first and release it afterwards |
+| `--wait-console SECONDS` | wait for a `labgrid-pty` on this host to have the console open before flashing (Twister use) |
 
 The runner picks `zephyr.hex` if it exists, then `zephyr.bin`, then
 `zephyr.elf`. What the flashing tool accepts depends on the driver in the
@@ -149,6 +178,12 @@ Or write it by hand. The minimum is:
 
 Keep `id` set. Twister silently drops `runner_params` when `id` is empty.
 
+The generated map also adds `--wait-console=30` to `runner_params`. Twister
+starts `labgrid-pty` and `west flash` at the same time; opening a remote
+console takes a few seconds, and the runner would otherwise reset the board
+before anyone listens. With `--acquire` on the generator both tools get
+`--acquire` and lock the place per test.
+
 Then run Twister as you would with a local board:
 
 ```sh
@@ -167,10 +202,13 @@ nothing extra is needed for it.
   `--env`.
 - `no BootstrapProtocol driver found`: the environment file has no flash
   driver, or the place has no probe resource. Ask the lab owner.
-- `timeout while waiting for option 'purge'` from `labgrid-pty`: the exporter
-  runs ser2net 4.6.0 (Ubuntu 24.04), which does not answer the RFC2217 purge
-  request. Set `LG_PTY_NO_PURGE=1` as a workaround, or ask for a ser2net
-  upgrade. See labgrid issue #1396.
+- `the serial server did not answer the RFC2217 purge request` from
+  `labgrid-pty`: the exporter runs ser2net 4.6.0 (Ubuntu 24.04), which does
+  not answer the purge request (labgrid issue #1396). The bridge continues
+  without purge and remembers the host for a day. Set `LG_PTY_NO_PURGE=1`
+  to skip the one second probe, or ask for a ser2net upgrade.
+- `could not acquire place`: someone else holds it. `labgrid-client places`
+  shows who.
 - Twister reports `Serial Device Error`: `labgrid-pty` could not start.
   Check that it is on `PATH` and that the place is acquired by you.
 - Twister reports `Device issue (Flash error?)`: run the same `west flash`

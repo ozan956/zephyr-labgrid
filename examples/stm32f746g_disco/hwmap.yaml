@@ -9,5 +9,6 @@
   runner_params:
     - --dev-id=stm32f746g-disco
     - --env=/path/to/zephyr-labgrid/examples/stm32f746g_disco/labgrid.yaml
+    - --wait-console=30            # flash after labgrid-pty has the console open
   serial_pty: "labgrid-pty,-p,stm32f746g-disco,-e,/path/to/zephyr-labgrid/examples/stm32f746g_disco/labgrid.yaml"
   flash_timeout: 120
