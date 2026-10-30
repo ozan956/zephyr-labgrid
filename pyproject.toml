@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zephyr-labgrid"
+version = "0.1.0"
+description = "Use labgrid places from west flash and Twister"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = [
+    "labgrid",
+    "pyserial",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+labgrid-pty = "zephyr_labgrid.pty:main"
+labgrid-twister-hwmap = "zephyr_labgrid.hwmap:main"
+labgrid-twister-check = "zephyr_labgrid.check:main"
+
+[tool.setuptools]
+packages = ["zephyr_labgrid"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

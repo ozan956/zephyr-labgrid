@@ -19,16 +19,28 @@ Supported labgrid drivers:
 """
 
 import os
+import signal
+import sys
 from pathlib import Path
 
 from runners.core import RunnerCaps, RunnerConfig, ZephyrBinaryRunner
+
+# The zephyr_labgrid package sits next to scripts/ in the module checkout.
+# west loads this file by path, so put the checkout first on sys.path; a pip
+# installed copy of the package is used only when the checkout has none.
+_MODULE_ROOT = str(Path(__file__).resolve().parent.parent)
+if _MODULE_ROOT not in sys.path:
+    sys.path.insert(0, _MODULE_ROOT)
+
+from zephyr_labgrid import common  # noqa: E402
 
 
 class LabgridBinaryRunner(ZephyrBinaryRunner):
     """Flash a Zephyr image through a labgrid place."""
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
-                 power_cycle=False, reset=False, timeout=None):
+                 power_cycle=False, reset=False, timeout=None, acquire=False,
+                 wait_console=0.0):
         super().__init__(cfg)
         self.env_file = env_file
         self.place = place
@@ -36,6 +48,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.power_cycle = power_cycle
         self.reset = reset
         self.timeout = timeout
+        self.acquire = acquire
+        self.wait_console = wait_console
 
     @classmethod
     def name(cls):
@@ -64,15 +78,21 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                  '(needs a PowerProtocol driver)')
         parser.add_argument('--timeout', type=float, default=None,
                             help='override labgrid resource wait timeout')
+        parser.add_argument('--acquire', action='store_true',
+                            help='acquire the place before flashing and release '
+                                 'it afterwards (kept if already acquired by you)')
+        parser.add_argument('--wait-console', type=float, default=0.0, metavar='SECONDS',
+                            help='wait up to SECONDS for a labgrid-pty on this host '
+                                 'to have the console of the place open before '
+                                 'flashing (Twister starts both at the same time)')
         parser.set_defaults(reset=False)
 
     @classmethod
     def do_create(cls, cfg: RunnerConfig, args):
         # ZEPHYR_LABGRID_ENV is preferred over LG_ENV: LG_ENV also activates
         # labgrid's own pytest plugin inside pytest-twister-harness runs.
-        env_file = (args.env or os.environ.get('ZEPHYR_LABGRID_ENV')
-                    or os.environ.get('LG_ENV'))
-        place = args.dev_id or os.environ.get('LG_PLACE')
+        env_file = args.env or common.default_env()
+        place = args.dev_id or common.default_place()
         if not env_file:
             raise ValueError('labgrid runner needs --env, $ZEPHYR_LABGRID_ENV '
                              'or $LG_ENV')
@@ -81,7 +101,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         return LabgridBinaryRunner(cfg, env_file=env_file, place=place,
                                    driver_name=args.driver,
                                    power_cycle=args.power_cycle,
-                                   reset=args.reset, timeout=args.timeout)
+                                   reset=args.reset, timeout=args.timeout,
+                                   acquire=args.acquire,
+                                   wait_console=args.wait_console)
 
     def _image(self) -> str:
         if self.cfg.file is not None:
@@ -189,6 +211,35 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         image = self._image()
         self.logger.info(f'flashing {image} via labgrid place {self.place}')
 
+        lock = None
+        if self.acquire:
+            # Twister terminates west flash on its flash timeout. Turn the
+            # signal into an exception so the place is released below.
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+            lock = common.PlaceLock(self.place, common.coordinator_for_env(self.env_file),
+                                    log=self.logger.info)
+            try:
+                lock.acquire()
+            except common.PlaceLockError as e:
+                raise RuntimeError(str(e)) from None
+
+        try:
+            if self.wait_console > 0:
+                coordinator = common.coordinator_for_env(self.env_file)
+                if common.wait_console_ready(self.place, coordinator, self.wait_console):
+                    self.logger.info('console bridge is open')
+                else:
+                    self.logger.warning(f'no console bridge for place {self.place} '
+                                        f'after {self.wait_console:g} s, flashing anyway')
+            self._flash(image, Environment, NoDriverFoundError, NoResourceFoundError)
+        finally:
+            if lock:
+                try:
+                    lock.release()
+                except common.PlaceLockError as e:
+                    self.logger.warning(str(e))
+
+    def _flash(self, image, Environment, NoDriverFoundError, NoResourceFoundError):
         # labgrid environment files refer to the place as !template $LG_PLACE
         os.environ['LG_PLACE'] = self.place
         try:
