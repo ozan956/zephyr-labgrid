@@ -48,9 +48,10 @@ def test_name_and_caps(runner_mod):
 
 def test_create_from_arguments(runner_mod, runner_config, clean_env):
     r = create(runner_mod, runner_config,
-               ['--dev-id', 'p1', '--env', '/e.yaml', '--acquire', '--wait-console', '5',
-                '--driver', 'Flash', '--timeout', '7'])
-    assert (r.place, r.env_file, r.acquire, r.wait_console) == ('p1', '/e.yaml', True, 5.0)
+               ['--dev-id', 'p1', '--env', '/e.yaml', '--wait-console', '5',
+                '--driver', 'Flash', '--timeout', '7', '--ignore-platform'])
+    assert (r.place, r.env_file, r.wait_console) == ('p1', '/e.yaml', 5.0)
+    assert r.ignore_platform and not r.acquire
     assert (r.driver_name, r.timeout, r.reset) == ('Flash', 7.0, False)
 
 
@@ -63,11 +64,10 @@ def test_create_from_environment(runner_mod, runner_config, clean_env, monkeypat
     assert create(runner_mod, runner_config, []).env_file == '/zl.yaml'
 
 
-def test_create_errors(runner_mod, runner_config, clean_env, monkeypatch):
-    with pytest.raises(ValueError, match='--dev-id'):
-        create(runner_mod, runner_config, ['--env', '/e.yaml'])
-    # no env: looked up from the place tag later, in do_run
-    assert create(runner_mod, runner_config, ['--dev-id', 'p']).env_file is None
+def test_create_needs_no_place_or_env(runner_mod, runner_config, clean_env):
+    # both are looked up later, in do_run
+    r = create(runner_mod, runner_config, [])
+    assert (r.place, r.env_file) == (None, None)
 
 
 def test_image_prefers_hex_then_bin(runner_mod, runner_config, clean_env):
@@ -92,6 +92,9 @@ class FakeConf:
     def __getitem__(self, item):
         return self.values[item]
 
+    def get(self, option, *args):
+        return self.values.get(option, *args)
+
     def getboolean(self, option):
         return bool(self.values.get(option, False))
 
@@ -111,9 +114,23 @@ class FakeEdt:
         return FakeNode(self._code)
 
 
+BOARD = {'CONFIG_BOARD_TARGET': 'b/q', 'CONFIG_BOARD': 'b'}
+
+
 @pytest.fixture
-def runner(runner_mod, runner_config, clean_env):
-    return create(runner_mod, runner_config, ['--dev-id', 'p', '--env', '/e.yaml'])
+def lab(monkeypatch, place_info):
+    """The coordinator's places as the runner sees them. Place p is ours."""
+    from zephyr_labgrid import common
+    places = {'p': place_info('b/q', acquired='h/u')}
+    monkeypatch.setattr(common, 'lab_places', lambda coordinator=None: places)
+    return places
+
+
+@pytest.fixture
+def runner(runner_mod, runner_config, clean_env, lab):
+    r = create(runner_mod, runner_config, ['--dev-id', 'p', '--env', '/e.yaml'])
+    r._build_conf = FakeConf(dict(BOARD))
+    return r
 
 
 def test_flash_address_from_kconfig(runner):
@@ -239,9 +256,12 @@ def test_do_run_flashes_and_cleans_up(runner, monkeypatch):
     boot = FakeBootstrap()
     target = FakeTarget({'BootstrapProtocol': boot})
 
+    seen = []
+
     class FakeEnvironment:
         def __init__(self, config_file):
             assert config_file == '/e.yaml'
+            seen.append(os.environ.get('LG_PLACE'))
 
         def get_target(self):
             return target
@@ -251,7 +271,8 @@ def test_do_run_flashes_and_cleans_up(runner, monkeypatch):
     runner.do_run('flash')
     assert boot.loaded == [runner.cfg.hex_file]
     assert target.deactivated == [boot] and target.cleaned
-    assert os.environ['LG_PLACE'] == 'p'
+    # LG_PLACE is set for the environment file only, then restored
+    assert seen == ['p'] and 'LG_PLACE' not in os.environ
 
 
 def test_do_run_with_acquire_uses_place_lock(runner, monkeypatch, lock_dir):
@@ -326,7 +347,7 @@ def fake_environment(monkeypatch, target, created=None):
 
 
 def test_sysbuild_holds_place_across_images(runner_mod, runner_config, clean_env,
-                                            monkeypatch, lock_dir):
+                                            monkeypatch, lock_dir, lab):
     """west flash runs the runner once per sysbuild image in one process;
     the place must stay acquired from the first image to the last."""
     from zephyr_labgrid import common
@@ -338,6 +359,7 @@ def test_sysbuild_holds_place_across_images(runner_mod, runner_config, clean_env
     for _ in ('mcuboot', 'app'):
         r = create(runner_mod, runner_config,
                    ['--dev-id', 'p', '--env', '/e.yaml', '--acquire'])
+        r._build_conf = FakeConf(dict(BOARD))
         r.do_run('flash')
     assert calls == ['acquire']
     assert len(boot.loaded) == 2
@@ -386,27 +408,55 @@ def test_reset_command_without_any_driver_fails(runner, monkeypatch):
         runner.do_run('reset')
 
 
-def test_dry_run_touches_nothing(runner_mod, runner_config, clean_env, monkeypatch, caplog):
-    from zephyr_labgrid import common
+def test_dry_run_flashes_nothing(runner_mod, runner_config, clean_env, monkeypatch, caplog,
+                                 lab):
     created = []
     fake_environment(monkeypatch, FakeTarget({}), created)
-    monkeypatch.setattr(common, 'run_labgrid_client',
-                        lambda *a, **k: pytest.fail('dry run talked to the coordinator'))
-    runner = create(runner_mod, runner_config,
-                    ['--dev-id', 'p', '--env', '/e.yaml', '--acquire', '--dry-run'])
+    runner = create(runner_mod, runner_config, ['--dev-id', 'p', '--env', '/e.yaml', '--dry-run'])
+    runner._build_conf = FakeConf(dict(BOARD))
     with caplog.at_level('INFO'):
         runner.do_run('flash')
     assert created == []
-    assert 'would flash' in caplog.text and 'would acquire' in caplog.text
+    assert 'would flash' in caplog.text
 
 
-def test_env_from_place_tag(runner_mod, runner_config, clean_env, monkeypatch, tmp_path):
-    from zephyr_labgrid import common
-    monkeypatch.setattr(common, 'place_tags', lambda place, coordinator=None:
-                        {'zephyr_env': 'stm32/labgrid.yaml'})
+def test_env_from_place_tag(runner_mod, runner_config, clean_env, monkeypatch, tmp_path, lab):
+    lab['p']['tags']['zephyr_env'] = 'stm32/labgrid.yaml'
     monkeypatch.setenv('ZEPHYR_LABGRID_ENV_DIR', str(tmp_path))
     created = []
     fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}), created)
     r = create(runner_mod, runner_config, ['--dev-id', 'p'])
+    r._build_conf = FakeConf(dict(BOARD))
     r.do_run('flash')
     assert created == [str(tmp_path / 'stm32/labgrid.yaml')]
+
+
+def test_place_is_picked_from_the_build(runner_mod, runner_config, clean_env, monkeypatch,
+                                        lab, place_info, caplog):
+    lab['other'] = place_info('c/q', acquired='h/u')
+    lab['free'] = place_info('b/q')
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}))
+    r = create(runner_mod, runner_config, ['--env', '/e.yaml'])
+    r._build_conf = FakeConf(dict(BOARD))
+    with caplog.at_level('INFO'):
+        r.do_run('flash')
+    assert r.place == 'p'
+    assert 'the one you hold for b/q' in caplog.text
+
+
+def test_place_must_be_ours(runner, lab):
+    lab['p']['acquired'] = None
+    with pytest.raises(RuntimeError, match='labgrid-client -p p acquire'):
+        runner.do_run('flash')
+    lab['p']['acquired'] = 'x/y'
+    with pytest.raises(RuntimeError, match='acquired by x/y'):
+        runner.do_run('flash')
+
+
+def test_platform_must_fit_the_build(runner, lab, monkeypatch):
+    lab['p']['tags']['zephyr_platform'] = 'c/q'
+    with pytest.raises(RuntimeError, match='--ignore-platform'):
+        runner.do_run('flash')
+    runner.ignore_platform = True
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}))
+    runner.do_run('flash')

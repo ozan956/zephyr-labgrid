@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """West runner that flashes and resets through a labgrid place.
 
-The runner is a thin client: it resolves a labgrid environment (``--env``,
-``$ZEPHYR_LABGRID_ENV``, or the ``zephyr_env`` tag of the place), points it
-at a place (``--dev-id`` or ``$LG_PLACE``) and asks the flash driver of the
-target to load the image. The actual
+The runner is a thin client. It uses a place the user holds (``--dev-id``,
+``$LG_PLACE``, or the one place of the user whose ``zephyr_platform`` tag
+fits the build), resolves its labgrid environment (``--env``,
+``$ZEPHYR_LABGRID_ENV``, or the ``zephyr_env`` tag of the place) and asks the
+flash driver of the target to load the image. The actual
 flashing tool (OpenOCD, or a vendor tool behind FlashScriptDriver)
 runs wherever the labgrid exporter decides, usually on the exporter host
 next to the probe.
@@ -19,6 +20,7 @@ Supported labgrid drivers:
   build configuration (for raw .bin images).
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -40,7 +42,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
                  power_cycle=False, reset=False, timeout=None, acquire=False,
-                 wait_console=0.0, env_dir=None):
+                 wait_console=0.0, env_dir=None, ignore_platform=False):
         super().__init__(cfg)
         self.env_file = env_file
         self.env_dir = env_dir
@@ -50,6 +52,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.reset = reset
         self.timeout = timeout
         self.acquire = acquire
+        self.ignore_platform = ignore_platform
         self.wait_console = wait_console
 
     @classmethod
@@ -63,7 +66,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def dev_id_help(cls) -> str:
-        return 'labgrid place name (defaults to $LG_PLACE)'
+        return ('labgrid place name (defaults to $LG_PLACE, then to the one place '
+                'you hold whose zephyr_platform tag fits the build)')
 
     @classmethod
     def do_add_parser(cls, parser):
@@ -83,10 +87,12 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                  '(needs a PowerProtocol driver)')
         parser.add_argument('--timeout', type=float, default=None,
                             help='override labgrid resource wait timeout')
-        parser.add_argument('--acquire', action='store_true',
-                            help='acquire the place before flashing and release '
-                                 'it when west exits, after the last image of a '
-                                 'sysbuild build (kept if already acquired by you)')
+        # Not for users: hardware maps from labgrid-twister-hwmap pass it, so
+        # that Twister acquires each place for a test and releases it after.
+        parser.add_argument('--acquire', action='store_true', help=argparse.SUPPRESS)
+        parser.add_argument('--ignore-platform', action='store_true',
+                            help='flash even when the zephyr_platform tag of the '
+                                 'place does not fit the build')
         parser.add_argument('--wait-console', type=float, default=0.0, metavar='SECONDS',
                             help='wait up to SECONDS for a labgrid-pty on this host '
                                  'to have the console of the place open before '
@@ -100,16 +106,16 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         # Without either, the zephyr_env tag of the place is looked up in
         # do_run, so that creating the runner never talks to the coordinator.
         env_file = args.env or common.default_env()
+        # Without a place, do_run picks the one the user holds for this board.
         place = args.dev_id or common.default_place()
-        if not place:
-            raise ValueError('labgrid runner needs --dev-id or $LG_PLACE')
         runner = LabgridBinaryRunner(cfg, env_file=env_file, place=place,
                                      env_dir=args.env_dir,
                                      driver_name=args.driver,
                                      power_cycle=args.power_cycle,
                                      reset=args.reset, timeout=args.timeout,
                                      acquire=args.acquire,
-                                     wait_console=args.wait_console)
+                                     wait_console=args.wait_console,
+                                     ignore_platform=args.ignore_platform)
         # west does not apply --dry-run itself; every runner reads it.
         runner.dry_run = args.dry_run
         return runner
@@ -226,18 +232,56 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                'no ResetProtocol, PowerProtocol or OpenOCD driver')
         self.logger.info('no reset/power driver on target, relying on flasher reset')
 
-    def _resolve_env(self):
-        if self.env_file:
-            return
+    def _board(self):
+        conf = self.build_conf
+        target = conf.get('CONFIG_BOARD_TARGET') if 'CONFIG_BOARD_TARGET' in conf else None
+        board = conf.get('CONFIG_BOARD') if 'CONFIG_BOARD' in conf else None
+        return target, board
+
+    def _resolve_place(self):
+        """Pick the place and its environment file.
+
+        One coordinator query gives the owner, the tags and, without a
+        --dev-id, the place of the user that fits the build.
+        """
+        coordinator = common.coordinator_for_env(self.env_file)
         try:
-            self.env_file = common.resolve_env(None, self.place, env_dir=self.env_dir)
-        except ValueError as e:
+            places = common.lab_places(coordinator)
+        except common.PlaceLookupError as e:
             raise RuntimeError(str(e)) from None
-        self.logger.info(f'labgrid environment {self.env_file} (zephyr_env tag of '
-                         f'place {self.place})')
+        target, board = self._board()
+        try:
+            if self.place:
+                if not (self.acquire and self.dry_run):
+                    common.check_owned(places, self.place)
+            else:
+                if not target:
+                    raise common.PlaceSelectError(
+                        'the build has no CONFIG_BOARD_TARGET, pass --dev-id')
+                self.place = common.select_owned_place(places, target, board)
+                self.logger.info(f'using place {self.place}, the one you hold '
+                                 f'for {target}')
+        except common.PlaceSelectError as e:
+            raise RuntimeError(str(e)) from None
+
+        tags = places[self.place]['tags']
+        tag = tags.get('zephyr_platform')
+        if (tag and target and not self.ignore_platform
+                and not common.platform_matches(tag, target, board)):
+            raise RuntimeError(f'place {self.place} is for {tag}, the build is for '
+                               f'{target}. Pass --ignore-platform to flash anyway')
+
+        if not self.env_file:
+            try:
+                self.env_file = common.resolve_env(None, self.place, env_dir=self.env_dir,
+                                                   tags=tags)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from None
+            self.logger.info(f'labgrid environment {self.env_file} (zephyr_env tag of '
+                             f'place {self.place})')
 
     def _describe(self, command):
-        """--dry-run: say what would happen, touch nothing."""
+        """--dry-run: say what would happen, change nothing."""
         log = self.logger.info
         log(f'would use labgrid place {self.place} with environment {self.env_file}')
         if self.acquire:
@@ -262,7 +306,20 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             raise RuntimeError('labgrid runner needs the labgrid python package '
                                'in the environment running west') from e
 
-        self._resolve_env()
+        if self.acquire and not self.dry_run:
+            if not self.place:
+                raise RuntimeError('--acquire needs --dev-id')
+            # Twister terminates west flash on its flash timeout: release
+            # the place then, as atexit does on a normal exit.
+            common.release_places_on_sigterm()
+            try:
+                common.hold_place_for_process(
+                    self.place, common.coordinator_for_env(self.env_file),
+                    log=self.logger.info)
+            except common.PlaceLockError as e:
+                raise RuntimeError(str(e)) from None
+
+        self._resolve_place()
         if self.dry_run:
             self._describe(command)
             return
@@ -273,17 +330,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         else:
             image = None
             self.logger.info(f'resetting via labgrid place {self.place}')
-
-        if self.acquire:
-            # Twister terminates west flash on its flash timeout: release
-            # the place then, as atexit does on a normal exit.
-            common.release_places_on_sigterm()
-            try:
-                common.hold_place_for_process(
-                    self.place, common.coordinator_for_env(self.env_file),
-                    log=self.logger.info)
-            except common.PlaceLockError as e:
-                raise RuntimeError(str(e)) from None
 
         if command == 'flash' and self.wait_console > 0:
             coordinator = common.coordinator_for_env(self.env_file)
@@ -297,7 +343,11 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     def _run_on_target(self, command, image, Environment, NoDriverFoundError,
                        NoResourceFoundError):
-        # labgrid environment files refer to the place as !template $LG_PLACE
+        # labgrid environment files refer to the place as !template $LG_PLACE.
+        # Restore the variable afterwards: west runs the runner once per
+        # sysbuild image in one process, and the next image may have another
+        # place.
+        old_place = os.environ.get('LG_PLACE')
         os.environ['LG_PLACE'] = self.place
         try:
             env = Environment(config_file=self.env_file)
@@ -305,6 +355,11 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         except Exception as e:
             raise RuntimeError(f'could not load labgrid environment {self.env_file}: '
                                f'{e}') from e
+        finally:
+            if old_place is None:
+                os.environ.pop('LG_PLACE', None)
+            else:
+                os.environ['LG_PLACE'] = old_place
 
         try:
             try:
@@ -334,6 +389,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             except NoResourceFoundError as e:
                 raise RuntimeError(
                     f'labgrid place "{self.place}" has no matching resource: {e}. '
-                    'Is the place acquired by you and the exporter running?') from e
+                    'Is the exporter running?') from e
         finally:
             target.cleanup()
