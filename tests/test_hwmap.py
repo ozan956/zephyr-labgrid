@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-import os
-
 import pytest
 import yaml
 
@@ -11,117 +9,111 @@ def parse(argv):
     return hwmap.build_parser().parse_args(argv)
 
 
-def test_entry_from_tags(tmp_path, fake_place):
+@pytest.fixture
+def env_file(tmp_path):
+    env = tmp_path / 'e.yaml'
+    env.write_text('targets: {}\n')
+    return env
+
+
+LOCK = ['--acquire', '--acquire-wait=300']
+
+
+def test_entry_from_tags(tmp_path, place_info):
     env = tmp_path / 'stm32.yaml'
     env.write_text('targets: {}\n')
-    place = fake_place('disco-1', {
-        'zephyr_platform': 'stm32f746g_disco/stm32f746xx',
-        'zephyr_env': 'stm32.yaml',
-        'zephyr_fixtures': 'gpio_loopback, i2c_bus',
-        'zephyr_flash_timeout': '200',
-    })
-    args = parse(['--env-dir', str(tmp_path)])
-    entry = hwmap.make_entry('disco-1', place, args)
+    place = place_info('stm32f746g_disco/stm32f746xx', zephyr_env='stm32.yaml',
+                       zephyr_fixtures='gpio_loopback, i2c_bus', zephyr_flash_timeout='200')
+    entry = hwmap.make_entry('disco-1', place, parse(['--env-dir', str(tmp_path)]))
     assert entry['id'] == 'disco-1'
     assert entry['platform'] == 'stm32f746g_disco/stm32f746xx'
     assert entry['runner'] == 'labgrid'
-    assert entry['runner_params'] == ['--dev-id=disco-1', f'--env={env}', '--wait-console=30']
-    assert entry['serial_pty'] == f'labgrid-pty,-p,disco-1,-e,{env}'
+    assert entry['runner_params'] == ['--dev-id=disco-1', f'--env={env}'] + LOCK + [
+        '--wait-console=30']
+    assert entry['serial_pty'] == ','.join(['labgrid-pty', '-p', 'disco-1', '-e', str(env)]
+                                           + LOCK)
     assert entry['fixtures'] == ['gpio_loopback', 'i2c_bus']
-    assert entry['flash_timeout'] == 200
+    assert entry['flash_timeout'] == 200 + 300      # the wait for a busy place counts too
     assert 'flash_before' not in entry
     assert 'notes' not in entry
 
 
-def test_flash_before_and_pty_args(tmp_path, fake_place):
-    env = tmp_path / 'esp.yaml'
-    env.write_text('targets: {}\n')
-    place = fake_place('esp-1', {
-        'zephyr_platform': 'esp32_devkitc/esp32/procpu',
-        'zephyr_flash_before': 'true',
-        'zephyr_pty_args': '--reset-rts',
-    })
-    args = parse(['--env', str(env), '--acquire'])
-    entry = hwmap.make_entry('esp-1', place, args)
+def test_without_wait_the_flash_timeout_is_twisters(env_file, place_info):
+    entry = hwmap.make_entry('p', place_info('x/y'),
+                             parse(['--env', str(env_file), '--wait', '0']))
+    assert 'flash_timeout' not in entry
+    assert '--acquire' in entry['runner_params']
+    assert not any(p.startswith('--acquire-wait') for p in entry['runner_params'])
+    entry = hwmap.make_entry('p', place_info('x/y'), parse(['--env', str(env_file)]))
+    assert entry['flash_timeout'] == 60 + 300
+
+
+def test_flash_before_and_pty_args(env_file, place_info):
+    place = place_info('esp32_devkitc/esp32/procpu', zephyr_flash_before='true',
+                       zephyr_pty_args='--reset-rts')
+    entry = hwmap.make_entry('esp-1', place, parse(['--env', str(env_file)]))
     assert entry['flash_before'] is True
-    # no console wait when the console is opened after flashing
-    assert entry['runner_params'] == ['--dev-id=esp-1', f'--env={env}', '--acquire']
-    assert entry['serial_pty'].endswith(',--reset-rts,--acquire')
+    # the console opens after flashing: nothing to wait for
+    assert entry['runner_params'][-1] == '--wait-console=0'
+    assert entry['serial_pty'].endswith(',--reset-rts,--acquire,--acquire-wait=300')
 
 
-def test_wait_console_can_be_disabled(tmp_path, fake_place):
-    env = tmp_path / 'e.yaml'
-    env.write_text('')
-    place = fake_place('p', {'zephyr_platform': 'x/y'})
-    entry = hwmap.make_entry('p', place, parse(['--env', str(env), '--wait-console', '0']))
-    assert not any(p.startswith('--wait-console') for p in entry['runner_params'])
+def test_wait_console_can_be_disabled(env_file, place_info):
+    entry = hwmap.make_entry('p', place_info('x/y'),
+                             parse(['--env', str(env_file), '--wait-console', '0']))
+    assert entry['runner_params'][-1] == '--wait-console=0'
 
 
-def test_place_without_platform_is_skipped(fake_place):
-    assert hwmap.make_entry('p', fake_place('p', {}), parse([])) is None
+def test_place_without_platform_gives_no_entry(place_info):
+    assert hwmap.make_entry('p', place_info(), parse([])) is None
 
 
-def test_acquired_place_gets_note(tmp_path, fake_place):
-    env = tmp_path / 'e.yaml'
-    env.write_text('')
-    place = fake_place('p', {'zephyr_platform': 'x/y'}, acquired='host/user')
-    entry = hwmap.make_entry('p', place, parse(['--env', str(env)]))
-    assert entry['notes'] == 'acquired by host/user'
-    entry = hwmap.make_entry('p', place, parse(['--env', str(env), '--include-unavailable']))
-    assert 'notes' not in entry
-
-
-def test_force_env_overrides_tag(tmp_path, fake_place):
+def test_force_env_overrides_tag(tmp_path, place_info):
     forced = tmp_path / 'forced.yaml'
     forced.write_text('')
-    place = fake_place('p', {'zephyr_platform': 'x/y', 'zephyr_env': '/other.yaml'})
+    place = place_info('x/y', zephyr_env='/other.yaml')
     entry = hwmap.make_entry('p', place, parse(['--force-env', str(forced)]))
     assert f'--env={forced}' in entry['runner_params']
 
 
-def test_relative_env_without_dir_is_an_error(fake_place, clean_env):
-    place = fake_place('p', {'zephyr_platform': 'x/y', 'zephyr_env': 'rel.yaml'})
+def test_relative_env_without_dir_is_an_error(place_info):
     with pytest.raises(SystemExit) as e:
-        hwmap.make_entry('p', place, parse([]))
-    assert '--env-dir' in str(e.value)
+        hwmap.make_entry('p', place_info('x/y', zephyr_env='rel.yaml'), parse([]))
+    assert 'ZEPHYR_LABGRID_ENV_DIR' in str(e.value)
 
 
-def test_missing_env_is_an_error(fake_place):
-    place = fake_place('p', {'zephyr_platform': 'x/y'})
+def test_missing_env_is_an_error(place_info):
     with pytest.raises(SystemExit):
-        hwmap.make_entry('p', place, parse([]))
+        hwmap.make_entry('p', place_info('x/y'), parse([]))
 
 
-def test_hooks_are_written(tmp_path, fake_place):
-    env = tmp_path / 'e.yaml'
-    env.write_text('')
-    hooks = tmp_path / 'hooks'
-    places = {'p': fake_place('p', {'zephyr_platform': 'x/y'})}
-    args = parse(['--env', str(env), '--hooks', str(hooks), '-x', 'lab:20408'])
-    entries, skipped = hwmap.generate(places, args)
-    pre = entries[0]['pre_script']
-    assert pre == str(hooks / 'p-pre')
-    assert os.access(pre, os.X_OK)
-    assert 'labgrid-client -x lab:20408 -p p acquire' in open(pre).read()
-    assert 'release' in open(entries[0]['post_script']).read()
-
-
-def test_acquire_and_hooks_conflict(tmp_path):
-    with pytest.raises(SystemExit):
-        hwmap.main(['--acquire', '--hooks', str(tmp_path)])
-
-
-def test_generate_sorts_and_dumps(tmp_path, fake_place):
-    env = tmp_path / 'e.yaml'
-    env.write_text('')
+def test_generate_sorts_and_keeps_busy_places(env_file, place_info):
+    """The map is written once and used for a long time, so a place that is
+    in use right now stays in it. Its tests wait for it."""
     places = {
-        'b': fake_place('b', {'zephyr_platform': 'x/y'}),
-        'a': fake_place('a', {'zephyr_platform': 'x/z'}),
-        'c': fake_place('c', {}),
+        'b': place_info('x/y'),
+        'a': place_info('x/z', acquired='h/u'),         # ours
+        'c': place_info(),                              # no platform tag
+        'd': place_info('x/y', acquired='other/user'),  # someone else's
     }
-    entries, skipped = hwmap.generate(places, parse(['--env', str(env)]))
-    assert [e['id'] for e in entries] == ['a', 'b']
-    assert skipped == ['c']
+    entries, skipped = hwmap.generate(places, parse(['--env', str(env_file)]))
+    assert [e['id'] for e in entries] == ['a', 'b', 'd']
+    assert skipped == {'c': 'no zephyr_platform tag'}
+    assert 'notes' not in entries[0]
+    assert entries[2]['notes'] == 'acquired by other/user when the map was written'
     text = hwmap.dump(entries, 'lab:1')
     assert text.startswith('# Twister hardware map generated by labgrid-twister-hwmap from lab:1\n')
     assert yaml.safe_load(text) == entries
+
+
+def test_generate_filters(env_file, place_info):
+    places = {'s1': place_info('stm/q'), 's2': place_info('stm/q'),
+              'e1': place_info('esp/esp32/procpu')}
+
+    def ids(argv):
+        entries, _ = hwmap.generate(places, parse(['--env', str(env_file)] + argv))
+        return [e['id'] for e in entries]
+    assert ids(['-p', 'stm/q']) == ['s1', 's2']
+    assert ids(['-p', 'esp']) == ['e1']             # board name without qualifiers
+    assert ids(['--place', 's2', '--place', 'e1']) == ['e1', 's2']
+    assert ids(['-p', 'stm/q', '--place', 'e1']) == []
