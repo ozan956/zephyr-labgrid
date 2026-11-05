@@ -78,6 +78,9 @@ def clean_env(monkeypatch):
                 'LG_COORDINATOR',
                 'LG_PTY_NO_PURGE', 'ZEPHYR_LABGRID_PURGE'):
         monkeypatch.delenv(var, raising=False)
+    # labgrid-client's owner name for this user is then h/u
+    monkeypatch.setenv('LG_HOSTNAME', 'h')
+    monkeypatch.setenv('LG_USERNAME', 'u')
 
 
 class FakePlace:
@@ -92,3 +95,13 @@ class FakePlace:
 @pytest.fixture
 def fake_place():
     return FakePlace
+
+
+@pytest.fixture
+def place_info():
+    """An entry of common.lab_places."""
+    def make(platform=None, acquired=None, allowed=(), **tags):
+        if platform:
+            tags['zephyr_platform'] = platform
+        return {'tags': tags, 'acquired': acquired, 'allowed': list(allowed)}
+    return make

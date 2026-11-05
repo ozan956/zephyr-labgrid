@@ -3,11 +3,12 @@
 
 import atexit
 import contextlib
-import fcntl
+import getpass
 import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -46,12 +47,13 @@ def close_session(session):
         pass
 
 
-def place_tags(place, coordinator=None):
-    """Tags of a place, read from the coordinator in a child process.
+def lab_places(coordinator=None):
+    """All places of the coordinator as a dict, read in a child process.
 
-    A child process because labgrid's RemotePlace opens a coordinator
-    session of its own later in this process, and the coordinator accepts
-    one session per process. Raises PlaceLookupError.
+    ``{name: {'tags': {...}, 'acquired': 'host/user' or None,
+    'allowed': [...]}}``. A child process because labgrid's RemotePlace
+    opens a coordinator session of its own later in this process, and the
+    coordinator accepts one session per process. Raises PlaceLookupError.
     """
     import json
     coordinator = coordinator or default_coordinator()
@@ -63,12 +65,106 @@ def place_tags(place, coordinator=None):
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     code = ('import sys; sys.path[0] = sys.argv.pop(1); '
             'from zephyr_labgrid.placeinfo import main; sys.exit(main())')
-    proc = subprocess.run([sys.executable, '-c', code, root, '-x', coordinator, place],
+    proc = subprocess.run([sys.executable, '-c', code, root, '-x', coordinator],
                           env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc.returncode != 0:
         raise PlaceLookupError(proc.stderr.strip() or
-                               f'could not read place {place} from {coordinator}')
+                               f'could not read the places of {coordinator}')
     return json.loads(proc.stdout)
+
+
+def place_tags(place, coordinator=None):
+    """Tags of one place. Raises PlaceLookupError."""
+    places = lab_places(coordinator)
+    if place not in places:
+        raise PlaceLookupError(f'place {place} does not exist on '
+                               f'{coordinator or default_coordinator()}')
+    return places[place]['tags']
+
+
+def whoami():
+    """The owner name labgrid-client uses for this user, ``host/user``."""
+    host = os.environ.get('LG_HOSTNAME') or socket.gethostname()
+    user = os.environ.get('LG_USERNAME') or getpass.getuser()
+    return f'{host}/{user}'
+
+
+def owned_by(info, me=None):
+    """True when the place (an entry of lab_places) is acquired by ``me``
+    or ``me`` is allowed to use it."""
+    me = me or whoami()
+    return info.get('acquired') == me or me in (info.get('allowed') or [])
+
+
+def platform_matches(tag, board_target, board=None):
+    """Does a ``zephyr_platform`` tag fit a build?
+
+    ``board_target`` is CONFIG_BOARD_TARGET (``stm32f746g_disco/stm32f746xx``),
+    ``board`` is CONFIG_BOARD. A tag without qualifiers matches every target
+    of that board.
+    """
+    if not tag or not board_target:
+        return False
+    if tag == board_target:
+        return True
+    return '/' not in tag and tag == (board or board_target.split('/')[0])
+
+
+def platform_selects(tag, platform):
+    """Does a Twister ``-p`` platform select a place with this
+    ``zephyr_platform`` tag? A board name without qualifiers selects every
+    target of the board, as Twister treats it."""
+    if not tag or not platform:
+        return False
+    if tag == platform:
+        return True
+    return ('/' not in platform and tag.split('/')[0] == platform) or \
+        ('/' not in tag and platform.split('/')[0] == tag)
+
+
+class PlaceSelectError(RuntimeError):
+    pass
+
+
+def select_owned_place(places, board_target, board=None, me=None):
+    """The one place owned by ``me`` whose zephyr_platform tag fits the
+    build. Raises PlaceSelectError with a hint when there is none or more
+    than one."""
+    me = me or whoami()
+    fitting = sorted(name for name, info in places.items()
+                     if platform_matches(info['tags'].get('zephyr_platform'),
+                                         board_target, board))
+    mine = [name for name in fitting if owned_by(places[name], me)]
+    if len(mine) == 1:
+        return mine[0]
+    if mine:
+        raise PlaceSelectError(f'you hold several places for {board_target}: '
+                               f'{", ".join(mine)}. Pick one with --dev-id')
+    free = [name for name in fitting if not places[name].get('acquired')]
+    if free:
+        hint = (f'Free places for it: {", ".join(free)}. Take one with: '
+                f'labgrid-client -p {free[0]} acquire')
+    elif fitting:
+        hint = f'All places for it are in use: {", ".join(fitting)}'
+    else:
+        hint = 'No place has a matching zephyr_platform tag'
+    raise PlaceSelectError(f'you hold no place for {board_target}. {hint}')
+
+
+def check_owned(places, place, me=None):
+    """Raise PlaceSelectError unless ``place`` exists and is ``me``'s."""
+    me = me or whoami()
+    info = places.get(place)
+    if info is None:
+        raise PlaceSelectError(f'place {place} does not exist. Places: '
+                               f'{", ".join(sorted(places)) or "none"}')
+    if owned_by(info, me):
+        return
+    if info.get('acquired'):
+        raise PlaceSelectError(f'place {place} is acquired by {info["acquired"]}, '
+                               f'not by you ({me})')
+    raise PlaceSelectError(f'place {place} is not acquired. Take it first with: '
+                           f'labgrid-client -p {place} acquire')
 
 
 class PlaceLookupError(RuntimeError):
@@ -459,6 +555,9 @@ class PlaceLock:
 
     @contextlib.contextmanager
     def _locked(self):
+        # Imported here: west imports every module runner for every command,
+        # and a top level import of fcntl broke all runners on Windows.
+        import fcntl
         os.makedirs(self.dir, mode=0o700, exist_ok=True)
         fd = os.open(os.path.join(self.dir, 'lock'), os.O_RDWR | os.O_CREAT, 0o600)
         try:

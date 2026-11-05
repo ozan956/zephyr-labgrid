@@ -151,9 +151,7 @@ def check_env_vars(rep, args):
 
 
 def whoami():
-    host = os.environ.get('LG_HOSTNAME') or __import__('socket').gethostname()
-    user = os.environ.get('LG_USERNAME') or __import__('getpass').getuser()
-    return f'{host}/{user}'
+    return common.whoami()
 
 
 def check_coordinator(rep, coordinator):

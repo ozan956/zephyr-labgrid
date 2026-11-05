@@ -340,7 +340,7 @@ def test_resolve_env_reports_lookup_failure(clean_env, monkeypatch):
         common.resolve_env(None, 'p')
 
 
-def test_placeinfo_prints_tags(monkeypatch, capsys, fake_place):
+def test_placeinfo_prints_places(monkeypatch, capsys, fake_place):
     import json
 
     import labgrid.remote.client
@@ -348,19 +348,68 @@ def test_placeinfo_prints_tags(monkeypatch, capsys, fake_place):
     from zephyr_labgrid import placeinfo
 
     class Session:
-        places = {'p': fake_place('p', tags={'zephyr_env': 'e.yaml'})}
+        places = {'p': fake_place('p', tags={'zephyr_env': 'e.yaml'}, acquired='h/u',
+                                  allowed=['h/v'])}
     monkeypatch.setattr(labgrid.remote.client, 'start_session', lambda address: Session())
     monkeypatch.setattr(common, 'close_session', lambda s: None)
-    assert placeinfo.main(['-x', 'c:1', 'p']) == 0
-    assert json.loads(capsys.readouterr().out) == {'zephyr_env': 'e.yaml'}
-    assert placeinfo.main(['-x', 'c:1', 'missing']) == 2
+    assert placeinfo.main(['-x', 'c:1']) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        'p': {'tags': {'zephyr_env': 'e.yaml'}, 'acquired': 'h/u', 'allowed': ['h/v']}}
 
 
-def test_place_tags_ignores_labgrid_dir_in_cwd(tmp_path, monkeypatch):
+def test_lab_places_ignores_labgrid_dir_in_cwd(tmp_path, monkeypatch):
     """The child process must not import ./labgrid from the current directory."""
     (tmp_path / 'labgrid').mkdir()
     monkeypatch.chdir(tmp_path)
     with pytest.raises(common.PlaceLookupError) as e:
-        common.place_tags('p', coordinator='127.0.0.1:1')
+        common.lab_places(coordinator='127.0.0.1:1')
     assert 'cannot import' not in str(e.value)
     assert 'not reachable' in str(e.value)
+
+
+# -- ownership and place selection -------------------------------------------
+
+def test_whoami_and_owned_by(place_info):
+    assert common.whoami() == 'h/u'
+    assert common.owned_by(place_info(acquired='h/u'))
+    assert common.owned_by(place_info(acquired='x/y', allowed=['h/u']))
+    assert not common.owned_by(place_info(acquired='x/y'))
+    assert not common.owned_by(place_info())
+
+
+def test_platform_matches_and_selects():
+    assert common.platform_matches('b/q', 'b/q', 'b')
+    assert common.platform_matches('b', 'b/q', 'b')
+    assert not common.platform_matches('b/q', 'b/r', 'b')
+    assert not common.platform_matches('c/q', 'b/q', 'b')
+    assert common.platform_selects('b/q', 'b')
+    assert common.platform_selects('b', 'b/q')
+    assert not common.platform_selects('b/q', 'b/r')
+
+
+def test_select_owned_place(place_info):
+    places = {'mine': place_info('b/q', acquired='h/u'),
+              'free': place_info('b/q'),
+              'other': place_info('c/q', acquired='h/u')}
+    assert common.select_owned_place(places, 'b/q', 'b') == 'mine'
+    places['mine2'] = place_info('b/q', acquired='h/u')
+    with pytest.raises(common.PlaceSelectError, match='several places.*mine, mine2'):
+        common.select_owned_place(places, 'b/q', 'b')
+    with pytest.raises(common.PlaceSelectError, match='Free places for it: free'):
+        common.select_owned_place({'free': place_info('b/q')}, 'b/q', 'b')
+    with pytest.raises(common.PlaceSelectError, match='in use: busy'):
+        common.select_owned_place({'busy': place_info('b/q', acquired='x/y')}, 'b/q', 'b')
+    with pytest.raises(common.PlaceSelectError, match='No place has a matching'):
+        common.select_owned_place({}, 'b/q', 'b')
+
+
+def test_check_owned(place_info):
+    places = {'mine': place_info(acquired='h/u'), 'free': place_info(),
+              'busy': place_info(acquired='x/y')}
+    common.check_owned(places, 'mine')
+    with pytest.raises(common.PlaceSelectError, match='labgrid-client -p free acquire'):
+        common.check_owned(places, 'free')
+    with pytest.raises(common.PlaceSelectError, match='acquired by x/y'):
+        common.check_owned(places, 'busy')
+    with pytest.raises(common.PlaceSelectError, match='does not exist'):
+        common.check_owned(places, 'nope')
