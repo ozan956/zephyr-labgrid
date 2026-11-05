@@ -1,71 +1,91 @@
 # zephyr-labgrid
 
-zephyr-labgrid is an experimental Zephyr module that lets `west flash` and
-Twister use boards connected to a [labgrid](https://github.com/labgrid-project/labgrid)
-exporter. It adds a `labgrid` west runner and a `labgrid-pty` console bridge.
-No changes to Zephyr or labgrid are needed.
+Flash, reset and test Zephyr on boards in a [labgrid](https://github.com/labgrid-project/labgrid)
+lab as if they were on your desk. `west flash` and Twister work unchanged.
+The module adds a `labgrid` west runner and a `labgrid-pty` console bridge.
+The flash tool (OpenOCD, esptool, STM32CubeProgrammer, ...) runs on the
+exporter next to the board.
 
-Status: experimental. Tested with Zephyr main (October 2026) and labgrid
-master on an STM32F746G-DISCO (on-board ST-Link, flashed with OpenOCD and
-with STM32CubeProgrammer) and on an ESP32-DevKitC (USB-UART bridge, flashed
-with esptool), using Twister's console, ztest and pytest harnesses.
+**This is an experimental release (0.1).** Tested with Zephyr 4.5 and labgrid master
+on an STM32F746G-DISCO (OpenOCD and STM32CubeProgrammer) and an
+ESP32-DevKitC (esptool), with Twister's console, ztest and pytest harnesses.
+Feedback and reports from other labs and boards are very welcome.
 
-Documentation: [docs/](docs/README.md)
+## Requirements
 
-- [For Zephyr developers](docs/zephyr-developer.md)
-- [For lab owners](docs/lab-owner.md)
-- [Best practices](docs/best-practices.md)
+- Linux or macOS (Twister's `--device-serial-pty` does not exist on Windows)
+- A Zephyr workspace (tested with Zephyr 4.5)
+- **labgrid master**, because no labgrid release has everything this module uses yet
+- A labgrid coordinator and exporter with your boards. Without a lab, start
+  with [One board on your desk](docs/quickstart.md).
 
-Parts:
-
-- `scripts/labgrid_runner.py`: `west flash -r labgrid -- --dev-id <place> [--env labgrid.yaml]`.
-  Resolves a labgrid environment, picks the place and asks its BootstrapProtocol
-  driver (OpenOCD, pyOCD, FlashScript, ...) to load the image. Flashing runs on
-  the exporter side.
-- `scripts/labgrid-pty`: console bridge for Twister's `serial_pty` /
-  pytest-twister-harness `--device-serial-pty`.
-- `scripts/labgrid-twister-hwmap`: writes a Twister hardware map from the
-  `zephyr_*` tags of your labgrid places.
-- `scripts/labgrid-twister-check`: checks a setup (packages, PATH, variables,
-  coordinator, place, environment file, exporter tools, console, hardware
-  map) and prints one line per check.
-- `zephyr_labgrid/`: the Python package behind the three tools. `pip install`
-  of this directory gives you the same commands without touching `PATH`.
-- `tests/`: unit tests (`pytest`; the runner tests need `ZEPHYR_BASE`).
-- `CMakeLists.txt`: registers the `labgrid` runner in every build's
-  `runners.yaml` (module CMake runs before `cmake/flash`).
-- `examples/stm32f746g_disco/`: labgrid environments (OpenOCD and
-  STM32CubeProgrammer), flash script, Twister hardware map.
-- `examples/esp32_devkitc/`: labgrid environment and esptool flash script
-  for a board whose console port is also the flash port.
-
-Usage:
+## Install
 
 ```sh
-export ZEPHYR_EXTRA_MODULES=/path/to/zephyr-labgrid
-export LG_COORDINATOR=host:20408
-export ZEPHYR_LABGRID_ENV=/path/to/zephyr-labgrid/examples/stm32f746g_disco/labgrid.yaml  # not LG_ENV, see below
-export PATH=/path/to/zephyr-labgrid/scripts:$PATH   # or: pip install /path/to/zephyr-labgrid
+git clone https://github.com/ozan956/zephyr-labgrid.git
 
-labgrid-twister-check -p stm32f746g-disco           # optional, finds setup problems
+# in the Python environment that runs west and twister
+pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
+pip install ./zephyr-labgrid
 
-west build -b stm32f746g_disco samples/hello_world
-west flash -r labgrid -- --dev-id=stm32f746g-disco
-
-twister -T tests/kernel/common --device-testing \
-        --hardware-map examples/stm32f746g_disco/hwmap.yaml
+# Zephyr loads the runner from the checkout, so add it to west.yml (see docs) or
+export ZEPHYR_EXTRA_MODULES=$PWD/zephyr-labgrid
 ```
 
-The place must be acquired by you (`labgrid-client -p PLACE acquire`), or
-pass `--acquire` to the runner and to `labgrid-pty` (hardware maps from
-`labgrid-twister-hwmap --acquire` do that) to lock it per test.
+## Use it
 
-ser2net 4.6.0 (Ubuntu 24.04) never answers the RFC2217 purge request
-(labgrid issue #1396). `labgrid-pty` detects this and continues without
-purge; set `LG_PTY_NO_PURGE=1` to skip the one second probe.
+Your lab owner tells you the coordinator address and the place name. The
+place carries a `zephyr_env` tag that points to the labgrid environment
+file for the board, and `ZEPHYR_LABGRID_ENV_DIR` is the directory those files
+live in.
 
-Why `ZEPHYR_LABGRID_ENV` and not `LG_ENV`: labgrid ships a pytest plugin that
-activates itself whenever `LG_ENV` is set. Twister's `harness: pytest` suites
-run pytest in a subprocess that inherits the environment, so `LG_ENV` would
-make labgrid's plugin load the environment file there too (and fail on the
-`$LG_PLACE` template). The runner and the bridge accept `--env` as well.
+```sh
+export LG_COORDINATOR=lab-coordinator:20408
+export ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
+labgrid-twister-check -p stm32f746g-disco          # finds setup problems
+
+# flash and reset
+west build -b stm32f746g_disco samples/hello_world
+west flash -r labgrid -- --dev-id=stm32f746g-disco --acquire
+west reset -r labgrid -- --dev-id=stm32f746g-disco --acquire
+
+# Twister, like --device-serial for a local board; no hardware map needed
+./scripts/twister -p stm32f746g_disco/stm32f746xx --device-testing \
+    --device-serial-pty "labgrid-pty,-p,stm32f746g-disco,--acquire" \
+    --west-runner labgrid \
+    --west-flash="--dev-id=stm32f746g-disco,--acquire,--wait-console=30" \
+    -T samples/hello_world
+```
+
+To make plain `west flash` use the lab, build with
+`-- -DBOARD_FLASH_RUNNER=labgrid '-DBOARD_RUNNER_ARGS_labgrid=--dev-id=stm32f746g-disco;--acquire'`.
+For several boards and CI, generate a Twister hardware map with
+`labgrid-twister-hwmap`. The details are in [docs/zephyr-developer.md](docs/zephyr-developer.md).
+
+## What works and what does not
+
+| | |
+|---|---|
+| `west flash` (`--file`, `--reset`, `--dry-run`, sysbuild) | yes |
+| `west reset` | yes (ResetProtocol, PowerProtocol or OpenOCD) |
+| `west debug`, `debugserver`, `attach`, `rtt` | not yet, needs OpenOCD gdb server support in labgrid, planned |
+| `--erase` | no |
+| Flash drivers | `OpenOCDDriver`, other `BootstrapProtocol` drivers, any tool through `FlashScriptDriver` (pyocd, dfu-util, nrfutil, esptool, J-Link, ...) |
+| Twister console, ztest, gtest, pytest and shell harnesses | yes |
+| Twister with or without a hardware map, parallel boards, fixtures, `--flash-before`, `--retry-failed` | yes |
+| pytest `mcumgr` fixture | no, it needs a real serial port and the console is a pty |
+| Boards with several console UARTs, Twister `required_devices` | no, one console per place |
+| Waiting for a busy place | no, a test fails when someone else holds the place |
+| Sysbuild on hardware | the place lock is held across images (unit tested), not yet tried on a board |
+
+## Documentation
+
+- [One board on your desk](docs/quickstart.md) gives you a complete lab on one machine to try the module
+- [For Zephyr developers](docs/zephyr-developer.md) explains how to flash, reset and run Twister on lab boards
+- [For lab owners](docs/lab-owner.md) explains how to prepare places, environment files and tags
+- [Best practices](docs/best-practices.md) lists what to watch out for
+- [Design notes](docs/design.md) describe how the pieces work inside, for contributors
+
+## License
+
+Apache-2.0
