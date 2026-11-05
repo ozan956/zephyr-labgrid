@@ -11,14 +11,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -r docs/requirements.txt
       - name: Build
         run: sphinx-build -M dirhtml docs docs/_build -W --keep-going
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/_build/dirhtml
 
@@ -36,4 +36,4 @@ jobs:
       group: pages
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
