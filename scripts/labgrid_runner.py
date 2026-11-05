@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""West runner that flashes through a labgrid place.
+"""West runner that flashes and resets through a labgrid place.
 
 The runner is a thin client: it resolves a labgrid environment (``--env``,
 ``$ZEPHYR_LABGRID_ENV``, or the ``zephyr_env`` tag of the place), points it
@@ -59,8 +59,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def capabilities(cls):
-        return RunnerCaps(commands={'flash'}, dev_id=True, reset=True,
-                          file=True)
+        return RunnerCaps(commands={'flash', 'reset'}, dev_id=True, reset=True,
+                          file=True, dry_run=True)
 
     @classmethod
     def dev_id_help(cls) -> str:
@@ -103,13 +103,16 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         place = args.dev_id or common.default_place()
         if not place:
             raise ValueError('labgrid runner needs --dev-id or $LG_PLACE')
-        return LabgridBinaryRunner(cfg, env_file=env_file, place=place,
-                                   env_dir=args.env_dir,
-                                   driver_name=args.driver,
-                                   power_cycle=args.power_cycle,
-                                   reset=args.reset, timeout=args.timeout,
-                                   acquire=args.acquire,
-                                   wait_console=args.wait_console)
+        runner = LabgridBinaryRunner(cfg, env_file=env_file, place=place,
+                                     env_dir=args.env_dir,
+                                     driver_name=args.driver,
+                                     power_cycle=args.power_cycle,
+                                     reset=args.reset, timeout=args.timeout,
+                                     acquire=args.acquire,
+                                     wait_console=args.wait_console)
+        # west does not apply --dry-run itself; every runner reads it.
+        runner.dry_run = args.dry_run
+        return runner
 
     def _image(self) -> str:
         if self.cfg.file is not None:
@@ -191,9 +194,13 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             args.append(remote_image)
         drv.flash(args=args, timeout=self.timeout)
 
-    def _reset_target(self, target):
-        """Best effort reset: ResetProtocol, then PowerProtocol, else rely on
-        the flasher having reset the target (e.g. OpenOCD 'reset run')."""
+    def _reset_target(self, target, required=False):
+        """Reset through ResetProtocol, then PowerProtocol, then OpenOCD.
+
+        After flashing this is best effort: without a reset driver the
+        flasher is expected to have reset the board (e.g. OpenOCD 'reset
+        run'). For ``west reset`` (``required``) no way to reset is an error.
+        """
         from labgrid.exceptions import NoDriverFoundError
 
         for proto, action in (('ResetProtocol', 'reset'), ('PowerProtocol', 'cycle')):
@@ -204,6 +211,19 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             self.logger.info(f'resetting target via {proto}')
             getattr(drv, action)()
             return
+        try:
+            from labgrid.driver import OpenOCDDriver
+            drv = target.get_driver(OpenOCDDriver)
+        except NoDriverFoundError:
+            drv = None
+        if drv is not None:
+            self.logger.info('resetting target via OpenOCD')
+            drv.execute(['init', 'reset run', 'shutdown'])
+            target.deactivate(drv)
+            return
+        if required:
+            raise RuntimeError(f'can not reset place "{self.place}": {self.env_file} has '
+                               'no ResetProtocol, PowerProtocol or OpenOCD driver')
         self.logger.info('no reset/power driver on target, relying on flasher reset')
 
     def _resolve_env(self):
@@ -216,6 +236,24 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.logger.info(f'labgrid environment {self.env_file} (zephyr_env tag of '
                          f'place {self.place})')
 
+    def _describe(self, command):
+        """--dry-run: say what would happen, touch nothing."""
+        log = self.logger.info
+        log(f'would use labgrid place {self.place} with environment {self.env_file}')
+        if self.acquire:
+            log(f'would acquire place {self.place} and release it afterwards')
+        if command == 'reset':
+            log('would reset via ResetProtocol, PowerProtocol or OpenOCD')
+            return
+        if self.wait_console > 0:
+            log(f'would wait up to {self.wait_console:g} s for labgrid-pty')
+        if self.power_cycle:
+            log('would power cycle the place first')
+        driver = self.driver_name or 'the BootstrapProtocol driver, else FlashScriptDriver'
+        log(f'would flash {self._image()} with {driver}')
+        if self.reset:
+            log('would reset the target afterwards')
+
     def do_run(self, command, **kwargs):
         try:
             from labgrid import Environment
@@ -225,8 +263,16 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                'in the environment running west') from e
 
         self._resolve_env()
-        image = self._image()
-        self.logger.info(f'flashing {image} via labgrid place {self.place}')
+        if self.dry_run:
+            self._describe(command)
+            return
+
+        if command == 'flash':
+            image = self._image()
+            self.logger.info(f'flashing {image} via labgrid place {self.place}')
+        else:
+            image = None
+            self.logger.info(f'resetting via labgrid place {self.place}')
 
         lock = None
         if self.acquire:
@@ -241,14 +287,15 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                 raise RuntimeError(str(e)) from None
 
         try:
-            if self.wait_console > 0:
+            if command == 'flash' and self.wait_console > 0:
                 coordinator = common.coordinator_for_env(self.env_file)
                 if common.wait_console_ready(self.place, coordinator, self.wait_console):
                     self.logger.info('console bridge is open')
                 else:
                     self.logger.warning(f'no console bridge for place {self.place} '
                                         f'after {self.wait_console:g} s, flashing anyway')
-            self._flash(image, Environment, NoDriverFoundError, NoResourceFoundError)
+            self._run_on_target(command, image, Environment, NoDriverFoundError,
+                                NoResourceFoundError)
         finally:
             if lock:
                 try:
@@ -256,7 +303,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                 except common.PlaceLockError as e:
                     self.logger.warning(str(e))
 
-    def _flash(self, image, Environment, NoDriverFoundError, NoResourceFoundError):
+    def _run_on_target(self, command, image, Environment, NoDriverFoundError,
+                       NoResourceFoundError):
         # labgrid environment files refer to the place as !template $LG_PLACE
         os.environ['LG_PLACE'] = self.place
         try:
@@ -268,6 +316,10 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
         try:
             try:
+                if command == 'reset':
+                    self._reset_target(target, required=True)
+                    return
+
                 if self.power_cycle:
                     try:
                         power = target.get_driver('PowerProtocol')

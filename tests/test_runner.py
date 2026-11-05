@@ -42,8 +42,8 @@ def test_name_and_caps(runner_mod):
     cls = runner_mod.LabgridBinaryRunner
     assert cls.name() == 'labgrid'
     caps = cls.capabilities()
-    assert caps.commands == {'flash'}
-    assert caps.dev_id and caps.reset and caps.file
+    assert caps.commands == {'flash', 'reset'}
+    assert caps.dev_id and caps.reset and caps.file and caps.dry_run
 
 
 def test_create_from_arguments(runner_mod, runner_config, clean_env):
@@ -303,7 +303,7 @@ def test_wait_console(runner, monkeypatch, lock_dir):
     waited = []
     monkeypatch.setattr(common, 'wait_console_ready',
                         lambda place, coordinator, timeout: waited.append((place, timeout)) or False)
-    monkeypatch.setattr(runner, '_flash', lambda *a: None)
+    monkeypatch.setattr(runner, '_run_on_target', lambda *a: None)
     runner.wait_console = 3
     runner.do_run('flash')
     assert waited == [('p', 3)]
@@ -320,6 +320,60 @@ def fake_environment(monkeypatch, target, created=None):
 
     import labgrid
     monkeypatch.setattr(labgrid, 'Environment', FakeEnvironment)
+
+
+class FakeReset:
+    def __init__(self):
+        self.count = 0
+
+    def reset(self):
+        self.count += 1
+
+
+class FakeOpenOCD:
+    def __init__(self):
+        self.commands = []
+
+    def execute(self, commands):
+        self.commands.append(commands)
+
+
+def test_reset_command_uses_reset_protocol(runner, monkeypatch):
+    rst = FakeReset()
+    boot = FakeBootstrap()
+    target = FakeTarget({'ResetProtocol': rst, 'BootstrapProtocol': boot})
+    fake_environment(monkeypatch, target)
+    runner.do_run('reset')
+    assert rst.count == 1 and not boot.loaded and target.cleaned
+
+
+def test_reset_command_falls_back_to_openocd(runner, monkeypatch):
+    ocd = FakeOpenOCD()
+    target = FakeTarget({'OpenOCDDriver': ocd})
+    fake_environment(monkeypatch, target)
+    runner.do_run('reset')
+    assert ocd.commands == [['init', 'reset run', 'shutdown']]
+    assert target.deactivated == [ocd]
+
+
+def test_reset_command_without_any_driver_fails(runner, monkeypatch):
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}))
+    with pytest.raises(RuntimeError, match='can not reset'):
+        runner.do_run('reset')
+
+
+def test_dry_run_touches_nothing(runner_mod, runner_config, clean_env, monkeypatch, caplog):
+    from zephyr_labgrid import common
+    created = []
+    fake_environment(monkeypatch, FakeTarget({}), created)
+    monkeypatch.setattr(common, 'run_labgrid_client',
+                        lambda *a, **k: pytest.fail('dry run talked to the coordinator'))
+    runner = create(runner_mod, runner_config,
+                    ['--dev-id', 'p', '--env', '/e.yaml', '--acquire', '--dry-run'])
+    with caplog.at_level('INFO'):
+        runner.do_run('flash')
+    assert created == []
+    assert 'would flash' in caplog.text and 'would acquire' in caplog.text
 
 
 def test_env_from_place_tag(runner_mod, runner_config, clean_env, monkeypatch, tmp_path):
