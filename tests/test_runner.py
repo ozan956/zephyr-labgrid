@@ -138,12 +138,14 @@ def test_flash_address_error_is_readable(runner):
 
 
 class FakeScriptDriver:
+    """Same signature as FlashScriptDriver.flash() in labgrid master."""
+
     def __init__(self, args):
         self.args = args
         self.device = object()
         self.calls = []
 
-    def flash(self, args=None, timeout=None):
+    def flash(self, script=None, args=None, timeout=None):
         self.calls.append((args, timeout))
 
 

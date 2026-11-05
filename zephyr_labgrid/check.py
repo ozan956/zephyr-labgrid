@@ -9,7 +9,7 @@ Usage: labgrid-twister-check [-x COORDINATOR] [-e ENV] [-p PLACE]
                              [--tool NAME ...] [--hwmap FILE] [--no-console]
 
 Checks:
-  python      labgrid, pyserial and PyYAML importable
+  python      labgrid, pyserial-labgrid and PyYAML importable
   path        labgrid-pty and labgrid-client on PATH
   env vars    ZEPHYR_LABGRID_ENV set, LG_ENV not set (pytest plugin trap)
   coordinator reachable, lists the places
@@ -80,7 +80,7 @@ def build_parser():
 
 def check_python(rep):
     ok = True
-    for mod, pkg in (('labgrid', 'labgrid'), ('serial', 'pyserial'), ('yaml', 'PyYAML')):
+    for mod, pkg in (('labgrid', 'labgrid'), ('serial', 'pyserial-labgrid'), ('yaml', 'PyYAML')):
         try:
             m = __import__(mod)
             version = getattr(m, '__version__', None) or getattr(m, 'VERSION', '')
@@ -88,7 +88,25 @@ def check_python(rep):
         except ImportError:
             rep.fail(f'python package {pkg} is missing: pip install {pkg}')
             ok = False
+    if ok and not labgrid_is_new_enough():
+        rep.fail('labgrid is too old: zephyr-labgrid needs labgrid master. '
+                 f'pip install "{LABGRID_MASTER}"')
+        ok = False
     return ok
+
+
+LABGRID_MASTER = 'labgrid @ git+https://github.com/labgrid-project/labgrid.git'
+
+
+def labgrid_is_new_enough():
+    """labgrid master has features no release has yet (26.0.1): the runner
+    passes a timeout to FlashScriptDriver.flash()."""
+    import inspect
+    try:
+        from labgrid.driver import FlashScriptDriver
+    except ImportError:
+        return False
+    return 'timeout' in inspect.signature(FlashScriptDriver.flash).parameters
 
 
 def check_path(rep, pty):

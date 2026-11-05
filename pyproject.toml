@@ -10,8 +10,10 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
-    "labgrid",
-    "pyserial",
+    # labgrid master (26.1.dev): no release has everything we use yet. Install
+    # it first: pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
+    # labgrid brings pyserial-labgrid; plain pyserial would overwrite it.
+    "labgrid>=26.1.dev0",
     "PyYAML",
 ]
 
