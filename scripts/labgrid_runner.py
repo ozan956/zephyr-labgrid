@@ -46,7 +46,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     """Flash a Zephyr image through a labgrid place."""
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
-                 power_cycle=False, reset=False, timeout=None, acquire=False,
+                 power_cycle=False, reset=False, timeout=None, acquire=False, acquire_wait=0.0,
                  wait_console=None, env_dir=None, ignore_platform=False):
         super().__init__(cfg)
         self.env_file = env_file
@@ -57,6 +57,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.reset = reset
         self.timeout = timeout
         self.acquire = acquire
+        self.acquire_wait = acquire_wait
         self.ignore_platform = ignore_platform
         self.wait_console = wait_console
 
@@ -95,6 +96,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         # Not for users: hardware maps from labgrid-twister-hwmap pass it, so
         # that Twister acquires each place for a test and releases it after.
         parser.add_argument('--acquire', action='store_true', help=argparse.SUPPRESS)
+        parser.add_argument('--acquire-wait', type=float, default=0.0, help=argparse.SUPPRESS)
         parser.add_argument('--ignore-platform', action='store_true',
                             help='flash even when the zephyr_platform tag of the '
                                  'place does not fit the build')
@@ -120,6 +122,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                      power_cycle=args.power_cycle,
                                      reset=args.reset, timeout=args.timeout,
                                      acquire=args.acquire,
+                                     acquire_wait=args.acquire_wait,
                                      wait_console=args.wait_console,
                                      ignore_platform=args.ignore_platform)
         # west does not apply --dry-run itself; every runner reads it.
@@ -323,7 +326,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             try:
                 common.hold_place_for_process(
                     self.place, common.coordinator_for_env(self.env_file),
-                    log=self.logger.info)
+                    log=self.logger.info, wait=self.acquire_wait)
             except common.PlaceLockError as e:
                 raise RuntimeError(str(e)) from None
 

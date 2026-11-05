@@ -68,6 +68,7 @@ def build_parser():
     # Not for users: hardware maps from labgrid-twister-hwmap pass it, so
     # that Twister acquires each place for a test and releases it after.
     parser.add_argument('--acquire', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--acquire-wait', type=float, default=0.0, help=argparse.SUPPRESS)
     parser.add_argument('--purge', choices=['auto', 'on', 'off'],
                         default=common.purge_mode_from_env(),
                         help='RFC2217 purge handling, see docs (default: auto, '
@@ -138,7 +139,7 @@ def main(argv=None):
     if args.acquire:
         lock = common.PlaceLock(args.place, common.coordinator_for_env(args.env), log=warn)
         try:
-            lock.acquire()
+            lock.acquire(wait=args.acquire_wait)
         except common.PlaceLockError as e:
             die(str(e))
 

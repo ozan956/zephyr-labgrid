@@ -189,6 +189,39 @@ def test_placelock_ignores_dead_pids(coordinator, lock_dir):
     assert not os.path.exists(stale)
 
 
+def test_placelock_waits_for_a_busy_place(lock_dir, monkeypatch):
+    answers = [(1, 'Error: Place x is already acquired by o/v. To work simultaneously ...'),
+               (1, 'Place x is already acquired'),
+               (0, 'acquired place x')]
+    monkeypatch.setattr(common, 'run_labgrid_client',
+                        lambda args, coordinator=None: answers.pop(0))
+    monkeypatch.setattr(common.time, 'sleep', lambda s: None)
+    log = []
+    lock = common.PlaceLock('x', log=log.append)
+    lock.acquire(wait=60)
+    assert lock.registered and answers == []
+    assert log[0].startswith('place x is in use')
+    assert log[-1] == 'acquired place x'
+
+
+def test_placelock_gives_up_after_the_wait(lock_dir, monkeypatch):
+    monkeypatch.setattr(common, 'run_labgrid_client', lambda args, coordinator=None:
+                        (1, 'Place x is already acquired by o/v.'))
+    clock = iter(range(0, 1000, 10))
+    monkeypatch.setattr(common.time, 'monotonic', lambda: next(clock))
+    monkeypatch.setattr(common.time, 'sleep', lambda s: None)
+    with pytest.raises(common.PlaceLockError, match='acquired by o/v'):
+        common.PlaceLock('x').acquire(wait=30)
+
+
+def test_placelock_place_of_the_user_on_another_host_is_busy(lock_dir, monkeypatch):
+    monkeypatch.setattr(common, 'run_labgrid_client', lambda args, coordinator=None:
+                        (1, 'You have already acquired place x on other-host. To work '
+                            'simultaneously, execute ...'))
+    with pytest.raises(common.PlaceLockError, match='on other-host'):
+        common.PlaceLock('x').acquire()
+
+
 def test_placelock_error_on_foreign_owner(coordinator, lock_dir, monkeypatch):
     monkeypatch.setattr(common, 'run_labgrid_client',
                         lambda args, coordinator=None: (1, 'Place x is already acquired by h/u.'))

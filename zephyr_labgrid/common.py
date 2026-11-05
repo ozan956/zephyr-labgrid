@@ -500,7 +500,7 @@ def pid_alive(pid):
 _PROCESS_LOCKS = {}
 
 
-def hold_place_for_process(place, coordinator=None, log=None):
+def hold_place_for_process(place, coordinator=None, log=None, wait=0.0):
     """Acquire the place once for the whole process and release it at exit.
 
     ``west flash`` on a sysbuild build runs the runner once per image
@@ -512,7 +512,7 @@ def hold_place_for_process(place, coordinator=None, log=None):
     lock = _PROCESS_LOCKS.get(key)
     if lock is None:
         lock = PlaceLock(place, coordinator, log=log)
-        lock.acquire()
+        lock.acquire(wait=wait)
         if not _PROCESS_LOCKS:
             atexit.register(release_process_places)
         _PROCESS_LOCKS[key] = lock
@@ -638,13 +638,38 @@ class PlaceLock:
                     pass
         return others
 
-    def acquire(self):
+    def _ours(self, out):
+        """labgrid-client says the place is ours on this host. "You have
+        already acquired place X on HOST" means another host, not ours."""
+        return re.search(rf'You have already acquired place {re.escape(self.place)}\.(\s|$)',
+                         out) is not None
+
+    @staticmethod
+    def _busy(out):
+        """Someone else holds the place (client check or coordinator race)."""
+        return 'is already acquired' in out or 'You have already acquired place' in out
+
+    def acquire(self, wait=0.0, poll=5.0):
+        """Acquire the place, or share it with the other zephyr-labgrid
+        tools of this run. When someone else holds it, try again for up to
+        ``wait`` seconds. Raises PlaceLockError."""
+        deadline = time.monotonic() + wait
+        while True:
+            busy = self._try_acquire(final=time.monotonic() >= deadline)
+            if not busy:
+                return
+            self.log(f'place {self.place} is in use: {busy}. Waiting for it')
+            time.sleep(max(0.0, min(poll, deadline - time.monotonic())))
+
+    def _try_acquire(self, final):
+        """One attempt. Returns None when the place is held now, or the
+        labgrid-client message when it is busy and ``final`` is false."""
         with self._locked():
             rc, out = run_labgrid_client(['-p', self.place, 'acquire'], self.coordinator)
             if rc == 0:
                 open(self.marker, 'w').close()
                 self.log(f'acquired place {self.place}')
-            elif 'You have already acquired place' in out:
+            elif self._ours(out):
                 if not os.path.exists(self.marker):
                     self.log(f'place {self.place} is already acquired by you, keeping it')
                 elif self._other_users():
@@ -659,11 +684,14 @@ class PlaceLock:
                              'zephyr-labgrid run left its marker behind. Keeping the '
                              'place, release it by hand when nobody uses it: '
                              f'labgrid-client -p {self.place} release')
+            elif self._busy(out) and not final:
+                return out
             else:
                 raise PlaceLockError(f'could not acquire place {self.place}: {out}')
             with open(self.pidfile, 'w') as f:
                 f.write(f'{os.getpid()}\n')
             self.registered = True
+            return None
 
     def release(self):
         if not self.registered:
