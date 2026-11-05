@@ -180,8 +180,9 @@ def check_place(rep, session, name):
         return None
     me = whoami()
     if not place.acquired:
-        rep.warn(f'place {name} is not acquired. Run: labgrid-client -p {name} acquire '
-                 '(or use --acquire)')
+        rep.warn(f'place {name} is not acquired. west needs it acquired by you: '
+                 f'labgrid-client -p {name} acquire. Twister acquires it per test with '
+                 'a map from labgrid-twister-hwmap')
     elif place.acquired == me or me in getattr(place, 'allowed', []):
         rep.ok(f'place {name} is acquired by you ({place.acquired})')
     else:
@@ -476,6 +477,12 @@ def run(args, rep):
     if session is not None:
         close_session(session)
 
+    if args.place and place is not None and not common.owned_by(
+            {'acquired': place.acquired, 'allowed': list(getattr(place, 'allowed', []))}):
+        # Loading the environment needs the place acquired by you.
+        rep.info('place not acquired by you: environment, resource and console '
+                 'checks skipped')
+        return
     env, target = check_env_file(rep, args.env, args.place)
     if target is not None:
         resources = check_resources(rep, target, place)
