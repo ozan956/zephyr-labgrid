@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """West runner that flashes through a labgrid place.
 
-The runner is a thin client: it resolves a labgrid environment (``--env`` or
-``$ZEPHYR_LABGRID_ENV``), points it at a place (``--dev-id`` or ``$LG_PLACE``)
-and asks the flash driver of the target to load the image. The actual
-flashing tool (OpenOCD, pyOCD, a vendor tool behind FlashScriptDriver, ...)
+The runner is a thin client: it resolves a labgrid environment (``--env``,
+``$ZEPHYR_LABGRID_ENV``, or the ``zephyr_env`` tag of the place), points it
+at a place (``--dev-id`` or ``$LG_PLACE``) and asks the flash driver of the
+target to load the image. The actual
+flashing tool (OpenOCD, or a vendor tool behind FlashScriptDriver)
 runs wherever the labgrid exporter decides, usually on the exporter host
 next to the probe.
 
 Supported labgrid drivers:
 
-- any driver implementing ``BootstrapProtocol`` (OpenOCDDriver, DFUDriver,
-  USB loaders, ...): the runner calls ``load(image)``.
+- any driver implementing ``BootstrapProtocol`` (OpenOCDDriver, FlashromDriver,
+  the USB loaders): the runner calls ``load(image)``.
 - ``FlashScriptDriver``: the runner copies the image to the exporter and
   runs the driver's script with ``{image}`` in ``args`` replaced by the
   remote path of the image and ``{address}`` by the flash offset from the
@@ -40,9 +41,10 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
                  power_cycle=False, reset=False, timeout=None, acquire=False,
-                 wait_console=0.0):
+                 wait_console=0.0, env_dir=None):
         super().__init__(cfg)
         self.env_file = env_file
+        self.env_dir = env_dir
         self.place = place
         self.driver_name = driver_name
         self.power_cycle = power_cycle
@@ -68,7 +70,11 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     def do_add_parser(cls, parser):
         parser.add_argument('--env', default=None,
                             help='labgrid environment YAML (defaults to '
-                                 '$ZEPHYR_LABGRID_ENV, then $LG_ENV)')
+                                 '$ZEPHYR_LABGRID_ENV, then $LG_ENV, then the '
+                                 'zephyr_env tag of the place)')
+        parser.add_argument('--env-dir', default=None,
+                            help='directory for a relative zephyr_env tag '
+                                 '(defaults to $ZEPHYR_LABGRID_ENV_DIR)')
         parser.add_argument('--driver', default=None,
                             help='name of the labgrid driver to flash with '
                                  '(default: the BootstrapProtocol driver, '
@@ -91,14 +97,14 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     def do_create(cls, cfg: RunnerConfig, args):
         # ZEPHYR_LABGRID_ENV is preferred over LG_ENV: LG_ENV also activates
         # labgrid's own pytest plugin inside pytest-twister-harness runs.
+        # Without either, the zephyr_env tag of the place is looked up in
+        # do_run, so that creating the runner never talks to the coordinator.
         env_file = args.env or common.default_env()
         place = args.dev_id or common.default_place()
-        if not env_file:
-            raise ValueError('labgrid runner needs --env, $ZEPHYR_LABGRID_ENV '
-                             'or $LG_ENV')
         if not place:
             raise ValueError('labgrid runner needs --dev-id or $LG_PLACE')
         return LabgridBinaryRunner(cfg, env_file=env_file, place=place,
+                                   env_dir=args.env_dir,
                                    driver_name=args.driver,
                                    power_cycle=args.power_cycle,
                                    reset=args.reset, timeout=args.timeout,
@@ -200,6 +206,16 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             return
         self.logger.info('no reset/power driver on target, relying on flasher reset')
 
+    def _resolve_env(self):
+        if self.env_file:
+            return
+        try:
+            self.env_file = common.resolve_env(None, self.place, env_dir=self.env_dir)
+        except ValueError as e:
+            raise RuntimeError(str(e)) from None
+        self.logger.info(f'labgrid environment {self.env_file} (zephyr_env tag of '
+                         f'place {self.place})')
+
     def do_run(self, command, **kwargs):
         try:
             from labgrid import Environment
@@ -208,6 +224,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             raise RuntimeError('labgrid runner needs the labgrid python package '
                                'in the environment running west') from e
 
+        self._resolve_env()
         image = self._image()
         self.logger.info(f'flashing {image} via labgrid place {self.place}')
 

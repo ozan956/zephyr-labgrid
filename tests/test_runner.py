@@ -64,10 +64,10 @@ def test_create_from_environment(runner_mod, runner_config, clean_env, monkeypat
 
 
 def test_create_errors(runner_mod, runner_config, clean_env, monkeypatch):
-    with pytest.raises(ValueError, match='--env'):
-        create(runner_mod, runner_config, ['--dev-id', 'p'])
     with pytest.raises(ValueError, match='--dev-id'):
         create(runner_mod, runner_config, ['--env', '/e.yaml'])
+    # no env: looked up from the place tag later, in do_run
+    assert create(runner_mod, runner_config, ['--dev-id', 'p']).env_file is None
 
 
 def test_image_prefers_hex_then_bin(runner_mod, runner_config, clean_env):
@@ -178,6 +178,7 @@ def test_flash_with_script_appends_image_without_placeholder(runner, managed_fil
     runner.timeout = 42
     runner._flash_with_script(drv, '/build/zephyr.hex')
     assert drv.calls == [(['--fast', '/remote/zephyr.hex'], 42)]
+
 
 
 class FakeTarget:
@@ -306,3 +307,28 @@ def test_wait_console(runner, monkeypatch, lock_dir):
     runner.wait_console = 3
     runner.do_run('flash')
     assert waited == [('p', 3)]
+
+
+def fake_environment(monkeypatch, target, created=None):
+    class FakeEnvironment:
+        def __init__(self, config_file):
+            if created is not None:
+                created.append(config_file)
+
+        def get_target(self):
+            return target
+
+    import labgrid
+    monkeypatch.setattr(labgrid, 'Environment', FakeEnvironment)
+
+
+def test_env_from_place_tag(runner_mod, runner_config, clean_env, monkeypatch, tmp_path):
+    from zephyr_labgrid import common
+    monkeypatch.setattr(common, 'place_tags', lambda place, coordinator=None:
+                        {'zephyr_env': 'stm32/labgrid.yaml'})
+    monkeypatch.setenv('ZEPHYR_LABGRID_ENV_DIR', str(tmp_path))
+    created = []
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}), created)
+    r = create(runner_mod, runner_config, ['--dev-id', 'p'])
+    r.do_run('flash')
+    assert created == [str(tmp_path / 'stm32/labgrid.yaml')]

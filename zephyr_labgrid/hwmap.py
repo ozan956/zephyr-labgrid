@@ -61,9 +61,10 @@ def build_parser():
     parser.add_argument('--force-env', default=None, metavar='FILE',
                         help='use this environment file for every place and '
                              'ignore zephyr_env tags')
-    parser.add_argument('--env-dir', default=None,
+    parser.add_argument('--env-dir', default=common.default_env_dir(),
                         help='directory for relative zephyr_env tag values '
-                             '(default: directory of --env)')
+                             '(default $ZEPHYR_LABGRID_ENV_DIR, else the directory '
+                             'of --env)')
     parser.add_argument('--pty', default='labgrid-pty',
                         help='console bridge command (default: labgrid-pty from PATH)')
     parser.add_argument('--acquire', action='store_true',
@@ -92,7 +93,7 @@ def resolve_env(name, place_tags, args):
                                    if args.env else None)
         if env_dir is None:
             sys.exit(f'{PROG}: zephyr_env tag of {name} is the relative path '
-                     f'"{env}"; give --env-dir or --env')
+                     f'"{env}"; set ZEPHYR_LABGRID_ENV_DIR or give --env-dir')
         env = os.path.join(env_dir, env)
     return os.path.abspath(env)
 

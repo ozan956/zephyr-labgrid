@@ -31,6 +31,82 @@ def default_coordinator():
     return os.environ.get('LG_COORDINATOR', DEFAULT_COORDINATOR)
 
 
+def default_env_dir():
+    return os.environ.get('ZEPHYR_LABGRID_ENV_DIR')
+
+
+def close_session(session):
+    """Stop a labgrid client session from ``start_session``."""
+    try:
+        session.loop.run_until_complete(session.stop())
+        session.loop.run_until_complete(session.close())
+    except Exception:
+        pass
+
+
+def place_tags(place, coordinator=None):
+    """Tags of a place, read from the coordinator in a child process.
+
+    A child process because labgrid's RemotePlace opens a coordinator
+    session of its own later in this process, and the coordinator accepts
+    one session per process. Raises PlaceLookupError.
+    """
+    import json
+    coordinator = coordinator or default_coordinator()
+    env = dict(os.environ)
+    env.pop('LG_ENV', None)
+    # Replace sys.path[0] (the current directory with -c/-m) by the
+    # directory of this package: a ./labgrid checkout in the current
+    # directory would otherwise hide the installed labgrid package.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    code = ('import sys; sys.path[0] = sys.argv.pop(1); '
+            'from zephyr_labgrid.placeinfo import main; sys.exit(main())')
+    proc = subprocess.run([sys.executable, '-c', code, root, '-x', coordinator, place],
+                          env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if proc.returncode != 0:
+        raise PlaceLookupError(proc.stderr.strip() or
+                               f'could not read place {place} from {coordinator}')
+    return json.loads(proc.stdout)
+
+
+class PlaceLookupError(RuntimeError):
+    pass
+
+
+def resolve_env(env_file, place, env_dir=None, coordinator=None, tags=None):
+    """Find the labgrid environment file for a place.
+
+    Order: ``env_file`` (the --env option), $ZEPHYR_LABGRID_ENV, $LG_ENV,
+    then the ``zephyr_env`` tag of the place. A relative tag is resolved
+    against ``env_dir`` (--env-dir, else $ZEPHYR_LABGRID_ENV_DIR). ``tags``
+    skips the coordinator lookup (tests, callers that already have them).
+    Returns the path; raises ValueError with a hint when nothing fits.
+    """
+    env_file = env_file or default_env()
+    if env_file:
+        return env_file
+    if not place:
+        raise ValueError('need a place to look up its zephyr_env tag')
+    if tags is None:
+        try:
+            tags = place_tags(place, coordinator)
+        except PlaceLookupError as e:
+            raise ValueError(f'no --env given and the zephyr_env tag of place '
+                             f'{place} could not be read: {e}') from None
+    tag = (tags or {}).get('zephyr_env')
+    if not tag:
+        raise ValueError(f'no --env given, $ZEPHYR_LABGRID_ENV is not set and place '
+                         f'{place} has no zephyr_env tag')
+    if os.path.isabs(tag):
+        return tag
+    env_dir = env_dir or default_env_dir()
+    if not env_dir:
+        raise ValueError(f'place {place} has zephyr_env={tag}, a relative path: set '
+                         '$ZEPHYR_LABGRID_ENV_DIR (or --env-dir) to the directory '
+                         'with the environment files')
+    return os.path.join(env_dir, tag)
+
+
 def coordinator_for_env(env_file):
     """Coordinator address for an environment file: the ``coordinator_address``
     option of the file when set, else $LG_COORDINATOR, else the default."""

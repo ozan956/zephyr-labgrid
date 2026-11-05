@@ -7,7 +7,8 @@ talks to it as if it were a serial port. We forward everything to the
 console driver of the labgrid target.
 
 Usage: labgrid-pty [-e ENV] [-p PLACE] [-l LOGFILE] [--reset-rts] [--acquire]
-  ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV)
+  ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV, then the zephyr_env
+        tag of the place, relative to --env-dir/$ZEPHYR_LABGRID_ENV_DIR)
   PLACE defaults to $LG_PLACE
 
 Exit codes: 0 on stdin EOF or SIGTERM, 1 on a labgrid error, 2 on usage.
@@ -49,7 +50,11 @@ def build_parser():
     parser = argparse.ArgumentParser(prog=PROG, description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-e', '--env', default=common.default_env(),
-                        help='labgrid environment file (default $ZEPHYR_LABGRID_ENV)')
+                        help='labgrid environment file (default $ZEPHYR_LABGRID_ENV, '
+                             'then the zephyr_env tag of the place)')
+    parser.add_argument('--env-dir', default=None,
+                        help='directory for a relative zephyr_env tag '
+                             '(default $ZEPHYR_LABGRID_ENV_DIR)')
     parser.add_argument('-p', '--place', default=common.default_place(),
                         help='labgrid place (default $LG_PLACE)')
     parser.add_argument('-l', '--logfile', default=None,
@@ -70,8 +75,12 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.env or not args.place:
-        parser.error('need --env/$ZEPHYR_LABGRID_ENV and --place/$LG_PLACE')
+    if not args.place:
+        parser.error('need --place/$LG_PLACE')
+    try:
+        args.env = common.resolve_env(args.env, args.place, env_dir=args.env_dir)
+    except ValueError as e:
+        die(str(e), code=2)
 
     os.environ['LG_PLACE'] = args.place
     try:

@@ -25,7 +25,7 @@ def test_usage_error_without_env_and_place(clean_env, capsys):
     with pytest.raises(SystemExit) as e:
         pty.main([])
     assert e.value.code == 2
-    assert 'ZEPHYR_LABGRID_ENV' in capsys.readouterr().err
+    assert '--place' in capsys.readouterr().err
 
 
 def test_defaults_come_from_environment(clean_env, monkeypatch):

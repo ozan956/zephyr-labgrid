@@ -236,3 +236,58 @@ def test_purge_cache_is_per_host(lock_dir, rfc2217_class, monkeypatch):
     other.portstr = 'rfc2217://exporter:40002'
     other.rfc2217_send_purge(1)
     assert other._rfc2217_options['purge'].set_calls == 0
+
+
+def test_resolve_env_order(clean_env, monkeypatch):
+    tags = {'zephyr_env': '/abs/tag.yaml'}
+    assert common.resolve_env('/opt.yaml', 'p', tags=tags) == '/opt.yaml'
+    monkeypatch.setenv('LG_ENV', '/lg.yaml')
+    assert common.resolve_env(None, 'p', tags=tags) == '/lg.yaml'
+    monkeypatch.setenv('ZEPHYR_LABGRID_ENV', '/zl.yaml')
+    assert common.resolve_env(None, 'p', tags=tags) == '/zl.yaml'
+
+
+def test_resolve_env_from_tag(clean_env, monkeypatch):
+    assert common.resolve_env(None, 'p', tags={'zephyr_env': '/abs/e.yaml'}) == '/abs/e.yaml'
+    with pytest.raises(ValueError, match='ZEPHYR_LABGRID_ENV_DIR'):
+        common.resolve_env(None, 'p', tags={'zephyr_env': 'rel/e.yaml'})
+    assert common.resolve_env(None, 'p', env_dir='/envs',
+                              tags={'zephyr_env': 'rel/e.yaml'}) == '/envs/rel/e.yaml'
+    monkeypatch.setenv('ZEPHYR_LABGRID_ENV_DIR', '/shared')
+    assert common.resolve_env(None, 'p', tags={'zephyr_env': 'e.yaml'}) == '/shared/e.yaml'
+    with pytest.raises(ValueError, match='no zephyr_env tag'):
+        common.resolve_env(None, 'p', tags={})
+
+
+def test_resolve_env_reports_lookup_failure(clean_env, monkeypatch):
+    def fail(place, coordinator=None):
+        raise common.PlaceLookupError('place p does not exist')
+    monkeypatch.setattr(common, 'place_tags', fail)
+    with pytest.raises(ValueError, match='does not exist'):
+        common.resolve_env(None, 'p')
+
+
+def test_placeinfo_prints_tags(monkeypatch, capsys, fake_place):
+    import json
+
+    import labgrid.remote.client
+
+    from zephyr_labgrid import placeinfo
+
+    class Session:
+        places = {'p': fake_place('p', tags={'zephyr_env': 'e.yaml'})}
+    monkeypatch.setattr(labgrid.remote.client, 'start_session', lambda address: Session())
+    monkeypatch.setattr(common, 'close_session', lambda s: None)
+    assert placeinfo.main(['-x', 'c:1', 'p']) == 0
+    assert json.loads(capsys.readouterr().out) == {'zephyr_env': 'e.yaml'}
+    assert placeinfo.main(['-x', 'c:1', 'missing']) == 2
+
+
+def test_place_tags_ignores_labgrid_dir_in_cwd(tmp_path, monkeypatch):
+    """The child process must not import ./labgrid from the current directory."""
+    (tmp_path / 'labgrid').mkdir()
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(common.PlaceLookupError) as e:
+        common.place_tags('p', coordinator='127.0.0.1:1')
+    assert 'cannot import' not in str(e.value)
+    assert 'not reachable' in str(e.value)

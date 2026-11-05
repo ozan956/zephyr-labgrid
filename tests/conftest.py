@@ -57,7 +57,8 @@ def lock_dir(tmp_path, monkeypatch):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for var in ('ZEPHYR_LABGRID_ENV', 'LG_ENV', 'LG_PLACE', 'LG_COORDINATOR',
+    for var in ('ZEPHYR_LABGRID_ENV', 'ZEPHYR_LABGRID_ENV_DIR', 'LG_ENV', 'LG_PLACE',
+                'LG_COORDINATOR',
                 'LG_PTY_NO_PURGE', 'ZEPHYR_LABGRID_PURGE'):
         monkeypatch.delenv(var, raising=False)
 

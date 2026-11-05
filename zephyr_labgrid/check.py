@@ -11,7 +11,8 @@ Usage: labgrid-twister-check [-x COORDINATOR] [-e ENV] [-p PLACE]
 Checks:
   python      labgrid, pyserial-labgrid and PyYAML importable
   path        labgrid-pty and labgrid-client on PATH
-  env vars    ZEPHYR_LABGRID_ENV set, LG_ENV not set (pytest plugin trap)
+  env vars    environment file from --env, ZEPHYR_LABGRID_ENV or the zephyr_env
+              tag; LG_ENV not set (pytest plugin trap)
   coordinator reachable, lists the places
   place       exists, acquired by you, zephyr_* tags
   env file    loads, has a console driver and a flash driver, image files exist
@@ -61,7 +62,11 @@ def build_parser():
                         help='coordinator HOST[:PORT] (default: coordinator_address '
                              'of the environment file, then $LG_COORDINATOR)')
     parser.add_argument('-e', '--env', default=common.default_env(),
-                        help='labgrid environment file (default $ZEPHYR_LABGRID_ENV)')
+                        help='labgrid environment file (default $ZEPHYR_LABGRID_ENV, '
+                             'then the zephyr_env tag of the place)')
+    parser.add_argument('--env-dir', default=None,
+                        help='directory for a relative zephyr_env tag '
+                             '(default $ZEPHYR_LABGRID_ENV_DIR)')
     parser.add_argument('-p', '--place', default=common.default_place(),
                         help='labgrid place (default $LG_PLACE)')
     parser.add_argument('--tool', action='append', default=[], metavar='NAME',
@@ -123,10 +128,12 @@ def check_env_vars(rep, args):
     if os.environ.get('ZEPHYR_LABGRID_ENV'):
         rep.ok(f'ZEPHYR_LABGRID_ENV={os.environ["ZEPHYR_LABGRID_ENV"]}')
     elif args.env:
-        rep.warn('ZEPHYR_LABGRID_ENV is not set; every Twister hardware map entry '
-                 'must then carry --env (labgrid-twister-hwmap does that)')
+        rep.ok(f'environment file {args.env} from --env')
+    elif args.place:
+        rep.info('no --env or ZEPHYR_LABGRID_ENV: the zephyr_env tag of the place is used')
     else:
-        rep.fail('no environment file: set ZEPHYR_LABGRID_ENV or pass --env')
+        rep.fail('no environment file: pass --place (zephyr_env tag), --env or set '
+                 'ZEPHYR_LABGRID_ENV')
     if os.environ.get('LG_ENV'):
         rep.warn('LG_ENV is set. It turns on the labgrid pytest plugin inside '
                  'Twister pytest suites. Use ZEPHYR_LABGRID_ENV instead.')
@@ -395,8 +402,12 @@ def check_hwmap(rep, path, session, pty_default):
         params = entry.get('runner_params') or []
         if not any(p.startswith('--dev-id') for p in params):
             rep.fail(f'{label}: runner_params has no --dev-id')
-        if not any(p.startswith('--env') for p in params) and not os.environ.get('ZEPHYR_LABGRID_ENV'):
-            rep.fail(f'{label}: runner_params has no --env and ZEPHYR_LABGRID_ENV is not set')
+        has_tag = bool(session is not None and ident in session.places
+                       and session.places[ident].tags.get('zephyr_env'))
+        if not (any(p.startswith('--env') for p in params)
+                or os.environ.get('ZEPHYR_LABGRID_ENV') or has_tag):
+            rep.fail(f'{label}: runner_params has no --env, ZEPHYR_LABGRID_ENV is not set '
+                     'and the place has no zephyr_env tag')
         for p in params:
             if p.startswith('--env='):
                 env = p.split('=', 1)[1]
@@ -436,13 +447,7 @@ def check_hwmap(rep, path, session, pty_default):
 # -- main --------------------------------------------------------------------
 
 def close_session(session):
-    """Stop the coordinator session. The coordinator allows one session per
-    process, and loading the environment opens its own."""
-    try:
-        session.loop.run_until_complete(session.stop())
-        session.loop.run_until_complete(session.close())
-    except Exception:
-        pass
+    common.close_session(session)
 
 
 def run(args, rep):
@@ -457,6 +462,13 @@ def run(args, rep):
     place = None
     if session is not None and args.place:
         place = check_place(rep, session, args.place)
+        if place is not None and not args.env:
+            try:
+                args.env = common.resolve_env(None, args.place, env_dir=args.env_dir,
+                                              tags=place.tags)
+                rep.ok(f'environment file {args.env} from the zephyr_env tag')
+            except ValueError as e:
+                rep.fail(str(e))
     elif not args.place:
         rep.info('no --place/$LG_PLACE: place, resource and console checks skipped')
 
