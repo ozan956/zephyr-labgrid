@@ -304,8 +304,8 @@ def test_do_run_releases_on_error(runner, monkeypatch, lock_dir):
 def test_wait_console(runner, monkeypatch, lock_dir):
     from zephyr_labgrid import common
     waited = []
-    monkeypatch.setattr(common, 'wait_console_ready',
-                        lambda place, coordinator, timeout: waited.append((place, timeout)) or False)
+    monkeypatch.setattr(common, 'wait_console_ready', lambda place, coordinator, timeout:
+                        waited.append((place, timeout)) or False)
     monkeypatch.setattr(runner, '_run_on_target', lambda *a: None)
     runner.wait_console = 3
     runner.do_run('flash')

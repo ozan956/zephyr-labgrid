@@ -28,5 +28,11 @@ labgrid-twister-check = "zephyr_labgrid.check:main"
 [tool.setuptools]
 packages = ["zephyr_labgrid"]
 
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

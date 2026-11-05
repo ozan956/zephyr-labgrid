@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check zephyr_labgrid scripts tests
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      # The runner tests import runners.core from Zephyr's scripts/.
+      - uses: actions/checkout@v4
+        with:
+          repository: zephyrproject-rtos/zephyr
+          path: zephyr
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install labgrid master and this module
+        run: |
+          pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
+          pip install . west pytest
+      - name: Unit tests
+        env:
+          ZEPHYR_BASE: ${{ github.workspace }}/zephyr
+        run: python -m pytest -v

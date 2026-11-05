@@ -65,7 +65,8 @@ def test_acquired_place_gets_note(tmp_path, fake_place):
     env = tmp_path / 'e.yaml'
     env.write_text('')
     place = fake_place('p', {'zephyr_platform': 'x/y'}, acquired='host/user')
-    assert hwmap.make_entry('p', place, parse(['--env', str(env)]))['notes'] == 'acquired by host/user'
+    entry = hwmap.make_entry('p', place, parse(['--env', str(env)]))
+    assert entry['notes'] == 'acquired by host/user'
     entry = hwmap.make_entry('p', place, parse(['--env', str(env), '--include-unavailable']))
     assert 'notes' not in entry
 
@@ -78,7 +79,7 @@ def test_force_env_overrides_tag(tmp_path, fake_place):
     assert f'--env={forced}' in entry['runner_params']
 
 
-def test_relative_env_without_dir_is_an_error(fake_place):
+def test_relative_env_without_dir_is_an_error(fake_place, clean_env):
     place = fake_place('p', {'zephyr_platform': 'x/y', 'zephyr_env': 'rel.yaml'})
     with pytest.raises(SystemExit) as e:
         hwmap.make_entry('p', place, parse([]))

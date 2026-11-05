@@ -42,6 +42,7 @@ def zephyr_runners():
     """Make ``runners.core`` importable, or skip."""
     if ZEPHYR_BASE is None:
         pytest.skip('no Zephyr tree: set ZEPHYR_BASE')
+    pytest.importorskip('west', reason='runners.core needs the west package')
     path = str(ZEPHYR_BASE / 'scripts' / 'west_commands')
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -70,8 +71,9 @@ def lock_dir(tmp_path, monkeypatch):
     return tmp_path / 'locks'
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
+    """Every test starts without the variables the tools read."""
     for var in ('ZEPHYR_LABGRID_ENV', 'ZEPHYR_LABGRID_ENV_DIR', 'LG_ENV', 'LG_PLACE',
                 'LG_COORDINATOR',
                 'LG_PTY_NO_PURGE', 'ZEPHYR_LABGRID_PURGE'):
