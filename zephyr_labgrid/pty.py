@@ -6,10 +6,12 @@ Intended as Twister's ``serial_pty`` script (and the pytest-twister-harness
 talks to it as if it were a serial port. We forward everything to the
 console driver of the labgrid target.
 
-Usage: labgrid-pty [-e ENV] [-p PLACE] [-l LOGFILE] [--reset-rts] [--acquire]
+Usage: labgrid-pty [-e ENV] [-p PLACE] [-l LOGFILE] [--reset-rts]
+  PLACE defaults to $LG_PLACE, then to the place you hold for
+        $TWISTER_PLATFORM (Twister sets it), then to the one place you
+        hold. The place must be acquired by you.
   ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV, then the zephyr_env
         tag of the place, relative to --env-dir/$ZEPHYR_LABGRID_ENV_DIR)
-  PLACE defaults to $LG_PLACE
 
 Exit codes: 0 on stdin EOF or SIGTERM, 1 on a labgrid error, 2 on usage.
 """
@@ -56,15 +58,16 @@ def build_parser():
                         help='directory for a relative zephyr_env tag '
                              '(default $ZEPHYR_LABGRID_ENV_DIR)')
     parser.add_argument('-p', '--place', default=common.default_place(),
-                        help='labgrid place (default $LG_PLACE)')
+                        help='labgrid place (default $LG_PLACE, then the place you '
+                             'hold for $TWISTER_PLATFORM or the one place you hold)')
     parser.add_argument('-l', '--logfile', default=None,
                         help='also append raw console output to this file')
     parser.add_argument('--reset-rts', action='store_true',
                         help='pulse RTS after connecting to reset boards whose '
                              'reset line is wired to RTS (USB-UART ESP32 kits)')
-    parser.add_argument('--acquire', action='store_true',
-                        help='acquire the place on start and release it on exit '
-                             '(kept if it was already acquired by you)')
+    # Not for users: hardware maps from labgrid-twister-hwmap pass it, so
+    # that Twister acquires each place for a test and releases it after.
+    parser.add_argument('--acquire', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--purge', choices=['auto', 'on', 'off'],
                         default=common.purge_mode_from_env(),
                         help='RFC2217 purge handling, see docs (default: auto, '
@@ -72,15 +75,39 @@ def build_parser():
     return parser
 
 
+def resolve_place(args):
+    """Fill in args.place and args.env (the zephyr_env tag) from one
+    coordinator query, and check that the user holds the place."""
+    places = common.lab_places(common.coordinator_for_env(args.env))
+    if not args.place:
+        platform = os.environ.get('TWISTER_PLATFORM')
+        if platform:
+            args.place = common.select_owned_place(places, platform, platform.split('/')[0])
+        else:
+            mine = sorted(name for name, info in places.items() if common.owned_by(info))
+            if not mine:
+                raise common.PlaceSelectError('you hold no place. Take one with: '
+                                              'labgrid-client -p PLACE acquire')
+            if len(mine) > 1:
+                raise common.PlaceSelectError(f'you hold several places ({", ".join(mine)}), '
+                                              'pick one with -p')
+            args.place = mine[0]
+    if not args.acquire:
+        common.check_owned(places, args.place)
+    args.env = common.resolve_env(args.env, args.place, env_dir=args.env_dir,
+                                  tags=places[args.place]['tags'])
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.place:
-        parser.error('need --place/$LG_PLACE')
-    try:
-        args.env = common.resolve_env(args.env, args.place, env_dir=args.env_dir)
-    except ValueError as e:
-        die(str(e), code=2)
+    if not (args.place and args.env):
+        # Twister hardware maps pass both; then the console opens without
+        # asking the coordinator first.
+        try:
+            resolve_place(args)
+        except (common.PlaceLookupError, common.PlaceSelectError, ValueError) as e:
+            die(str(e), code=2)
 
     os.environ['LG_PLACE'] = args.place
     try:

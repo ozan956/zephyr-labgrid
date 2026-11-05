@@ -21,11 +21,38 @@ def test_reset_rts_pulses_rts_with_dtr_low(monkeypatch):
     assert ser.events == [('dtr', False), ('rts', True), ('rts', False)]
 
 
-def test_usage_error_without_env_and_place(clean_env, capsys):
+def test_place_and_env_from_the_coordinator(clean_env, monkeypatch, place_info, tmp_path):
+    from zephyr_labgrid import common
+    places = {'p': place_info('b/q', acquired='h/u', zephyr_env='e.yaml'),
+              'q': place_info('b/q')}
+    monkeypatch.setattr(common, 'lab_places', lambda coordinator=None: places)
+    monkeypatch.setenv('ZEPHYR_LABGRID_ENV_DIR', str(tmp_path))
+    args = pty.build_parser().parse_args([])
+    pty.resolve_place(args)
+    assert (args.place, args.env) == ('p', str(tmp_path / 'e.yaml'))
+    args = pty.build_parser().parse_args(['-p', 'q'])
+    with pytest.raises(common.PlaceSelectError, match='labgrid-client -p q acquire'):
+        pty.resolve_place(args)
+
+
+def test_usage_error_without_any_place(clean_env, monkeypatch, capsys):
+    from zephyr_labgrid import common
+    monkeypatch.setattr(common, 'lab_places', lambda coordinator=None: {})
     with pytest.raises(SystemExit) as e:
         pty.main([])
     assert e.value.code == 2
-    assert '--place' in capsys.readouterr().err
+    assert 'you hold no place' in capsys.readouterr().err
+
+
+def test_place_from_twister_platform(clean_env, monkeypatch, place_info):
+    from zephyr_labgrid import common
+    places = {'stm': place_info('stm/q', acquired='h/u', zephyr_env='/s.yaml'),
+              'esp': place_info('esp/esp32/procpu', acquired='h/u', zephyr_env='/e.yaml')}
+    monkeypatch.setattr(common, 'lab_places', lambda coordinator=None: places)
+    monkeypatch.setenv('TWISTER_PLATFORM', 'esp/esp32/procpu')
+    args = pty.build_parser().parse_args([])
+    pty.resolve_place(args)
+    assert (args.place, args.env) == ('esp', '/e.yaml')
 
 
 def test_defaults_come_from_environment(clean_env, monkeypatch):
