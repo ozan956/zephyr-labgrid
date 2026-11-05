@@ -399,18 +399,29 @@ def clear_console_ready(path):
         pass
 
 
-def console_is_ready(place, coordinator=None):
-    """True when a live process has marked the console of the place open."""
+def mark_console_starting(place, coordinator=None):
+    """Tell other tools that this process is opening the console of the
+    place. The marker of a process that died is ignored."""
+    directory = place_dir(place, coordinator)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    path = os.path.join(directory, f'console-{os.getpid()}.starting')
+    open(path, 'w').close()
+    return path
+
+
+def _live_marker(place, coordinator, suffix):
+    """True when a live process left a console-<pid><suffix> marker.
+    Markers of dead processes are removed."""
     directory = place_dir(place, coordinator)
     try:
         names = os.listdir(directory)
     except OSError:
         return False
     for name in names:
-        if not (name.startswith('console-') and name.endswith('.ready')):
+        if not (name.startswith('console-') and name.endswith(suffix)):
             continue
         try:
-            pid = int(name[len('console-'):-len('.ready')])
+            pid = int(name[len('console-'):-len(suffix)])
         except ValueError:
             continue
         if pid_alive(pid):
@@ -420,6 +431,43 @@ def console_is_ready(place, coordinator=None):
         except OSError:
             pass
     return False
+
+
+def console_is_ready(place, coordinator=None):
+    """True when a live process has marked the console of the place open."""
+    return _live_marker(place, coordinator, '.ready')
+
+
+def console_expected(place, coordinator=None, grace=0.0, poll=0.2):
+    """True when a labgrid-pty for the place is starting or open. Waits up
+    to ``grace`` seconds for one to show up."""
+    deadline = time.monotonic() + grace
+    while True:
+        if (_live_marker(place, coordinator, '.starting')
+                or _live_marker(place, coordinator, '.ready')):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll)
+
+
+def started_by_twister(pid=None):
+    """True when the parent process is a Twister run that opens the console
+    before flashing, so that a labgrid-pty is about to start.
+
+    Twister passes nothing to west flash that says so; its command line
+    (Linux /proc) does. Twister's --flash-before opens the console after
+    flashing, so there is nothing to wait for then.
+    """
+    pid = pid or os.getppid()
+    try:
+        with open(f'/proc/{pid}/cmdline', 'rb') as f:
+            words = f.read().split(b'\0')
+    except OSError:
+        return False
+    if b'--flash-before' in words:
+        return False
+    return any(b'twister' in w for w in words)
 
 
 def wait_console_ready(place, coordinator=None, timeout=30.0, poll=0.2):

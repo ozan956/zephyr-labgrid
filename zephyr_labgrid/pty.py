@@ -131,6 +131,9 @@ def main(argv=None):
     signal.signal(signal.SIGINT, on_term)
     signal.signal(signal.SIGHUP, on_term)
 
+    # A west flash started together with us (Twister) waits for the console.
+    starting = common.mark_console_starting(args.place, common.coordinator_for_env(args.env))
+
     lock = None
     if args.acquire:
         lock = common.PlaceLock(args.place, common.coordinator_for_env(args.env), log=warn)
@@ -185,6 +188,7 @@ def main(argv=None):
 
     # Tell a west flash --wait-console that the console is open now.
     ready = common.mark_console_ready(args.place, common.coordinator_for_env(args.env))
+    common.clear_console_ready(starting)
 
     failure = []
     out = sys.stdout.buffer

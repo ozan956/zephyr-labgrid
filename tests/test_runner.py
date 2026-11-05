@@ -117,6 +117,14 @@ class FakeEdt:
 BOARD = {'CONFIG_BOARD_TARGET': 'b/q', 'CONFIG_BOARD': 'b'}
 
 
+@pytest.fixture(autouse=True)
+def not_under_twister(monkeypatch):
+    """The tests must not depend on who started pytest: a parent process
+    with "twister" in its command line would make every flash wait."""
+    from zephyr_labgrid import common
+    monkeypatch.setattr(common, 'started_by_twister', lambda pid=None: False)
+
+
 @pytest.fixture
 def lab(monkeypatch, place_info):
     """The coordinator's places as the runner sees them. Place p is ours."""
@@ -331,6 +339,24 @@ def test_wait_console(runner, monkeypatch, lock_dir):
     runner.wait_console = 3
     runner.do_run('flash')
     assert waited == [('p', 3)]
+    runner.wait_console = 0
+    runner.do_run('flash')
+    assert waited == [('p', 3)]
+
+
+def test_wait_console_by_default_only_for_a_starting_pty(runner_mod, runner, monkeypatch,
+                                                       lock_dir):
+    from zephyr_labgrid import common
+    waited = []
+    monkeypatch.setattr(common, 'wait_console_ready', lambda place, coordinator, timeout:
+                        waited.append(timeout) or True)
+    monkeypatch.setattr(runner, '_run_on_target', lambda *a: None)
+    assert runner.wait_console is None
+    runner.do_run('flash')                  # interactive: no labgrid-pty, no wait
+    assert waited == []
+    common.mark_console_starting('p', common.coordinator_for_env('/e.yaml'))
+    runner.do_run('flash')
+    assert waited == [runner_mod.AUTO_CONSOLE_WAIT]
 
 
 def fake_environment(monkeypatch, target, created=None):

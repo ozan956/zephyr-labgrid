@@ -36,13 +36,18 @@ if _MODULE_ROOT not in sys.path:
 
 from zephyr_labgrid import common  # noqa: E402
 
+# Under Twister, how long to look for a starting labgrid-pty, and how long
+# to wait for its console to open.
+TWISTER_GRACE = 5.0
+AUTO_CONSOLE_WAIT = 30.0
+
 
 class LabgridBinaryRunner(ZephyrBinaryRunner):
     """Flash a Zephyr image through a labgrid place."""
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
                  power_cycle=False, reset=False, timeout=None, acquire=False,
-                 wait_console=0.0, env_dir=None, ignore_platform=False):
+                 wait_console=None, env_dir=None, ignore_platform=False):
         super().__init__(cfg)
         self.env_file = env_file
         self.env_dir = env_dir
@@ -93,10 +98,11 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         parser.add_argument('--ignore-platform', action='store_true',
                             help='flash even when the zephyr_platform tag of the '
                                  'place does not fit the build')
-        parser.add_argument('--wait-console', type=float, default=0.0, metavar='SECONDS',
+        parser.add_argument('--wait-console', type=float, default=None, metavar='SECONDS',
                             help='wait up to SECONDS for a labgrid-pty on this host '
                                  'to have the console of the place open before '
-                                 'flashing (Twister starts both at the same time)')
+                                 'flashing. Default: wait when one is starting, as '
+                                 'under Twister. 0 never waits')
         parser.set_defaults(reset=False)
 
     @classmethod
@@ -289,7 +295,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         if command == 'reset':
             log('would reset via ResetProtocol, PowerProtocol or OpenOCD')
             return
-        if self.wait_console > 0:
+        if self.wait_console is None:
+            log('would wait for labgrid-pty when one is starting')
+        elif self.wait_console > 0:
             log(f'would wait up to {self.wait_console:g} s for labgrid-pty')
         if self.power_cycle:
             log('would power cycle the place first')
@@ -331,15 +339,31 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             image = None
             self.logger.info(f'resetting via labgrid place {self.place}')
 
-        if command == 'flash' and self.wait_console > 0:
-            coordinator = common.coordinator_for_env(self.env_file)
-            if common.wait_console_ready(self.place, coordinator, self.wait_console):
-                self.logger.info('console bridge is open')
-            else:
-                self.logger.warning(f'no console bridge for place {self.place} '
-                                    f'after {self.wait_console:g} s, flashing anyway')
+        if command == 'flash':
+            self._wait_for_console()
         self._run_on_target(command, image, Environment, NoDriverFoundError,
                             NoResourceFoundError)
+
+    def _wait_for_console(self):
+        """Twister starts labgrid-pty and west flash at the same time, and
+        the remote console takes seconds to open. Flashing first would
+        lose the boot output, so wait for the console when a labgrid-pty
+        for the place is starting. An interactive west flash, without
+        one, does not wait."""
+        coordinator = common.coordinator_for_env(self.env_file)
+        timeout = self.wait_console
+        if timeout is None:
+            grace = TWISTER_GRACE if common.started_by_twister() else 0.0
+            if not common.console_expected(self.place, coordinator, grace):
+                return
+            timeout = AUTO_CONSOLE_WAIT
+        if timeout <= 0:
+            return
+        if common.wait_console_ready(self.place, coordinator, timeout):
+            self.logger.info('console bridge is open')
+        else:
+            self.logger.warning(f'no console bridge for place {self.place} '
+                                f'after {timeout:g} s, flashing anyway')
 
     def _run_on_target(self, command, image, Environment, NoDriverFoundError,
                        NoResourceFoundError):

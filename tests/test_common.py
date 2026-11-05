@@ -413,3 +413,27 @@ def test_check_owned(place_info):
         common.check_owned(places, 'busy')
     with pytest.raises(common.PlaceSelectError, match='does not exist'):
         common.check_owned(places, 'nope')
+
+
+def test_console_starting_marker(lock_dir):
+    assert not common.console_expected('p', 'c:1')
+    path = common.mark_console_starting('p', 'c:1')
+    assert common.console_expected('p', 'c:1')
+    common.clear_console_ready(path)
+    assert not common.console_expected('p', 'c:1')
+
+
+def test_started_by_twister(tmp_path):
+    import subprocess
+    import sys
+    code = 'import time; time.sleep(30)'
+    procs = [subprocess.Popen([sys.executable, '-c', code] + extra)
+             for extra in (['scripts/twister', '-p', 'b'],
+                           ['scripts/twister', '--flash-before'],
+                           ['west', 'build'])]
+    try:
+        assert [common.started_by_twister(p.pid) for p in procs] == [True, False, False]
+    finally:
+        for p in procs:
+            p.kill()
+            p.wait()
