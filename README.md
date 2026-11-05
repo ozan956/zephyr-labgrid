@@ -17,7 +17,7 @@ Feedback and reports from other labs and boards are very welcome.
 - A Zephyr workspace (tested with Zephyr 4.5)
 - **labgrid master**, because no labgrid release has everything this module uses yet
 - A labgrid coordinator and exporter with your boards. Without a lab, start
-  with [One board on your desk](docs/quickstart.md).
+  with [One board on your desk](https://ozan956.github.io/zephyr-labgrid/quickstart/).
 
 ## Install
 
@@ -60,7 +60,7 @@ west reset -r labgrid -- --dev-id=stm32f746g-disco --acquire
 To make plain `west flash` use the lab, build with
 `-- -DBOARD_FLASH_RUNNER=labgrid '-DBOARD_RUNNER_ARGS_labgrid=--dev-id=stm32f746g-disco;--acquire'`.
 For several boards and CI, generate a Twister hardware map with
-`labgrid-twister-hwmap`. The details are in [docs/zephyr-developer.md](docs/zephyr-developer.md).
+`labgrid-twister-hwmap`. The details are in [For Zephyr developers](https://ozan956.github.io/zephyr-labgrid/flash-and-test/).
 
 ## What works and what does not
 
@@ -80,11 +80,14 @@ For several boards and CI, generate a Twister hardware map with
 
 ## Documentation
 
-- [One board on your desk](docs/quickstart.md) gives you a complete lab on one machine to try the module
-- [For Zephyr developers](docs/zephyr-developer.md) explains how to flash, reset and run Twister on lab boards
-- [For lab owners](docs/lab-owner.md) explains how to prepare places, environment files and tags
-- [Best practices](docs/best-practices.md) lists what to watch out for
-- [Design notes](docs/design.md) describe how the pieces work inside, for contributors
+The documentation is published at https://ozan956.github.io/zephyr-labgrid/. Build it locally with
+`pip install -r docs/requirements.txt` and `make -C docs dirhtml`.
+
+- [One board on your desk](https://ozan956.github.io/zephyr-labgrid/quickstart/) gives you a complete lab on one machine to try the module
+- [For Zephyr developers](https://ozan956.github.io/zephyr-labgrid/flash-and-test/) explains how to flash, reset and run Twister on lab boards
+- [For lab owners](https://ozan956.github.io/zephyr-labgrid/prepare-a-lab/) explains how to prepare places, environment files and tags
+- [Best practices](https://ozan956.github.io/zephyr-labgrid/best-practices/) lists what to watch out for
+- [Design notes](https://ozan956.github.io/zephyr-labgrid/design/) describe how the pieces work inside, for contributors
 
 ## License
 
