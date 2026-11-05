@@ -233,15 +233,17 @@ def main(argv=None):
                         traceback.print_exc(file=sys.stderr)
     finally:
         stop.set()
-        t.join(timeout=1.0)
         common.clear_console_ready(ready)
+        # Release first: Twister kills this process 0.5 s after SIGTERM.
+        # The release runs in a child that survives that (PlaceLock).
+        release()
+        t.join(timeout=1.0)
         try:
             target.cleanup()
         except Exception as e:
             warn(f'cleanup failed: {e}')
         if log:
             log.close()
-        release()
 
     if failure:
         die(failure[0])

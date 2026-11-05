@@ -20,7 +20,6 @@ Supported labgrid drivers:
 """
 
 import os
-import signal
 import sys
 from pathlib import Path
 
@@ -86,7 +85,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                             help='override labgrid resource wait timeout')
         parser.add_argument('--acquire', action='store_true',
                             help='acquire the place before flashing and release '
-                                 'it afterwards (kept if already acquired by you)')
+                                 'it when west exits, after the last image of a '
+                                 'sysbuild build (kept if already acquired by you)')
         parser.add_argument('--wait-console', type=float, default=0.0, metavar='SECONDS',
                             help='wait up to SECONDS for a labgrid-pty on this host '
                                  'to have the console of the place open before '
@@ -241,7 +241,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         log = self.logger.info
         log(f'would use labgrid place {self.place} with environment {self.env_file}')
         if self.acquire:
-            log(f'would acquire place {self.place} and release it afterwards')
+            log(f'would acquire place {self.place} and release it when west exits')
         if command == 'reset':
             log('would reset via ResetProtocol, PowerProtocol or OpenOCD')
             return
@@ -274,34 +274,26 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             image = None
             self.logger.info(f'resetting via labgrid place {self.place}')
 
-        lock = None
         if self.acquire:
-            # Twister terminates west flash on its flash timeout. Turn the
-            # signal into an exception so the place is released below.
-            signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
-            lock = common.PlaceLock(self.place, common.coordinator_for_env(self.env_file),
-                                    log=self.logger.info)
+            # Twister terminates west flash on its flash timeout: release
+            # the place then, as atexit does on a normal exit.
+            common.release_places_on_sigterm()
             try:
-                lock.acquire()
+                common.hold_place_for_process(
+                    self.place, common.coordinator_for_env(self.env_file),
+                    log=self.logger.info)
             except common.PlaceLockError as e:
                 raise RuntimeError(str(e)) from None
 
-        try:
-            if command == 'flash' and self.wait_console > 0:
-                coordinator = common.coordinator_for_env(self.env_file)
-                if common.wait_console_ready(self.place, coordinator, self.wait_console):
-                    self.logger.info('console bridge is open')
-                else:
-                    self.logger.warning(f'no console bridge for place {self.place} '
-                                        f'after {self.wait_console:g} s, flashing anyway')
-            self._run_on_target(command, image, Environment, NoDriverFoundError,
-                                NoResourceFoundError)
-        finally:
-            if lock:
-                try:
-                    lock.release()
-                except common.PlaceLockError as e:
-                    self.logger.warning(str(e))
+        if command == 'flash' and self.wait_console > 0:
+            coordinator = common.coordinator_for_env(self.env_file)
+            if common.wait_console_ready(self.place, coordinator, self.wait_console):
+                self.logger.info('console bridge is open')
+            else:
+                self.logger.warning(f'no console bridge for place {self.place} '
+                                    f'after {self.wait_console:g} s, flashing anyway')
+        self._run_on_target(command, image, Environment, NoDriverFoundError,
+                            NoResourceFoundError)
 
     def _run_on_target(self, command, image, Environment, NoDriverFoundError,
                        NoResourceFoundError):

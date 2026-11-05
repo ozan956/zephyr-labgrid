@@ -196,6 +196,79 @@ def test_placelock_error_on_foreign_owner(coordinator, lock_dir, monkeypatch):
         common.PlaceLock('x').acquire()
 
 
+def test_placelock_stale_marker_is_not_trusted(coordinator, lock_dir):
+    """A killed run left its marker. The user acquired by hand since: a tool
+    must not release the place in the end."""
+    first = common.PlaceLock('x')
+    first.acquire()
+    first.registered = False               # killed: no release, pid file gone
+    os.unlink(first.pidfile)
+    log = []
+    with common.PlaceLock('x', log=log.append):
+        pass
+    assert coordinator.acquired
+    assert 'release it by hand' in log[0]
+    assert not os.path.exists(first.marker)
+
+
+FAKE_CLIENT = """#!/bin/sh
+# fake labgrid-client: logs the action, release takes a while
+for a; do action=$a; done
+echo "$action" >> "$FAKE_LOG"
+[ "$action" = release ] && sleep 1
+echo "$action done"
+"""
+
+
+@pytest.fixture
+def fake_client_on_path(tmp_path, monkeypatch):
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    script = bindir / 'labgrid-client'
+    script.write_text(FAKE_CLIENT)
+    script.chmod(0o755)
+    monkeypatch.setenv('PATH', f'{bindir}{os.pathsep}{os.environ["PATH"]}')
+    monkeypatch.setenv('FAKE_LOG', str(tmp_path / 'calls'))
+    return tmp_path / 'calls'
+
+
+def test_release_in_child_process(fake_client_on_path, lock_dir, monkeypatch):
+    from conftest import REAL_RELEASE_IN_CHILD
+    monkeypatch.setattr(common.PlaceLock, '_release_in_child', REAL_RELEASE_IN_CHILD)
+    log = []
+    with common.PlaceLock('x', 'c:1', log=log.append) as lock:
+        pass
+    assert fake_client_on_path.read_text().split() == ['acquire', 'release']
+    assert log[-1] == 'released place x'
+    assert not os.path.exists(lock.marker)
+
+
+def test_release_survives_sigkill(fake_client_on_path, lock_dir):
+    """Twister kills labgrid-pty 0.5 s after SIGTERM. The release must
+    still happen and leave no marker behind."""
+    import signal
+    import subprocess
+    import sys
+    import time
+    code = ('import sys; sys.path.insert(0, sys.argv[1]); '
+            'from zephyr_labgrid import common; '
+            'lock = common.PlaceLock("x", "c:1"); lock.acquire(); '
+            'print("ready", flush=True); lock.release()')
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    proc = subprocess.Popen([sys.executable, '-c', code, root], stdout=subprocess.PIPE,
+                            text=True)
+    assert proc.stdout.readline().strip() == 'ready'
+    time.sleep(0.5)                         # release child runs, fake release sleeps
+    proc.send_signal(signal.SIGKILL)
+    proc.wait()
+    marker = os.path.join(common.place_dir('x', 'c:1'), common.PlaceLock.MARKER)
+    deadline = time.monotonic() + 10
+    while os.path.exists(marker) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert fake_client_on_path.read_text().split() == ['acquire', 'release']
+    assert not os.path.exists(marker)
+
+
 def test_placelock_release_without_acquire_is_noop(coordinator, lock_dir):
     common.PlaceLock('x').release()
     assert coordinator.calls == []

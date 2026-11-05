@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Small helpers used by the runner, the console bridge and the tools."""
 
+import atexit
 import contextlib
 import fcntl
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -351,6 +353,95 @@ def pid_alive(pid):
     return True
 
 
+_PROCESS_LOCKS = {}
+
+
+def hold_place_for_process(place, coordinator=None, log=None):
+    """Acquire the place once for the whole process and release it at exit.
+
+    ``west flash`` on a sysbuild build runs the runner once per image
+    (MCUboot, then the application, ...) in one process. Releasing after
+    every image would let someone else take the place in between.
+    """
+    coordinator = coordinator or default_coordinator()
+    key = (coordinator, place)
+    lock = _PROCESS_LOCKS.get(key)
+    if lock is None:
+        lock = PlaceLock(place, coordinator, log=log)
+        lock.acquire()
+        if not _PROCESS_LOCKS:
+            atexit.register(release_process_places)
+        _PROCESS_LOCKS[key] = lock
+    return lock
+
+
+def release_process_places():
+    """Release what hold_place_for_process acquired. Safe to call twice.
+
+    SIGTERM is ignored meanwhile: Twister terminates west on its flash
+    timeout, and a second signal must not cut the release short.
+    """
+    try:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    except ValueError:
+        pass    # not the main thread
+    while _PROCESS_LOCKS:
+        _, lock = _PROCESS_LOCKS.popitem()
+        try:
+            lock.release()
+        except PlaceLockError as e:
+            lock.log(str(e))
+
+
+def release_places_on_sigterm():
+    """On SIGTERM, release the places of hold_place_for_process and exit."""
+    def handler(signum, frame):
+        release_process_places()
+        os._exit(128 + signum)
+    signal.signal(signal.SIGTERM, handler)
+
+
+def release_if_unused(place, coordinator=None, log=print):
+    """Release the place when the tools still own it and none uses it.
+
+    Runs in the child process that PlaceLock.release() starts, under the
+    lock of the place, so a tool that starts meanwhile waits for it.
+    Returns True when nothing went wrong.
+    """
+    lock = PlaceLock(place, coordinator, log=log)
+    with lock._locked():
+        if not os.path.exists(lock.marker):
+            return True     # released already, or acquired by hand
+        others = lock._other_users()
+        if others:
+            log(f'place {place} is still used by another tool '
+                f'(pid {", ".join(map(str, others))}), not releasing')
+            return True
+        rc, out = run_labgrid_client(['-p', place, 'release'], lock.coordinator)
+        try:
+            os.unlink(lock.marker)
+        except OSError:
+            pass
+    if rc != 0:
+        log(f'could not release place {place}: {out}')
+        return False
+    log(f'released place {place}')
+    return True
+
+
+def _release_main(argv):
+    """Entry point of the release child process: PLACE COORDINATOR."""
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, signal.SIG_IGN)
+
+    def log(msg):
+        try:
+            print(msg, flush=True)
+        except OSError:
+            pass    # the parent is gone, the release still happens
+    return 0 if release_if_unused(argv[0], argv[1], log=log) else 1
+
+
 class PlaceLock:
     """Hold a place for the lifetime of a ``with`` block, shared with the
     other zephyr-labgrid tools on this host (see above)."""
@@ -407,11 +498,20 @@ class PlaceLock:
                 open(self.marker, 'w').close()
                 self.log(f'acquired place {self.place}')
             elif 'You have already acquired place' in out:
-                if os.path.exists(self.marker):
+                if not os.path.exists(self.marker):
+                    self.log(f'place {self.place} is already acquired by you, keeping it')
+                elif self._other_users():
                     self.log(f'place {self.place} is held by another zephyr-labgrid '
                              'tool, sharing it')
                 else:
-                    self.log(f'place {self.place} is already acquired by you, keeping it')
+                    # Marker without a live tool: left by a killed run. The
+                    # place may as well be acquired by hand since, so never
+                    # release it automatically.
+                    os.unlink(self.marker)
+                    self.log(f'place {self.place} is acquired by you and a stopped '
+                             'zephyr-labgrid run left its marker behind. Keeping the '
+                             'place, release it by hand when nobody uses it: '
+                             f'labgrid-client -p {self.place} release')
             else:
                 raise PlaceLockError(f'could not acquire place {self.place}: {out}')
             with open(self.pidfile, 'w') as f:
@@ -434,14 +534,28 @@ class PlaceLock:
                 self.log(f'place {self.place} is still used by another tool '
                          f'(pid {", ".join(map(str, others))}), not releasing')
                 return
-            rc, out = run_labgrid_client(['-p', self.place, 'release'], self.coordinator)
-            try:
-                os.unlink(self.marker)
-            except OSError:
-                pass
-            if rc != 0:
-                raise PlaceLockError(f'could not release place {self.place}: {out}')
-            self.log(f'released place {self.place}')
+        self._release_in_child()
+
+    def _release_in_child(self):
+        """Run release_if_unused in a child process and wait for it.
+
+        Twister sends SIGTERM and 0.5 s later SIGKILL, and it collects the
+        children to kill before the SIGTERM. A child started after that
+        survives the SIGKILL of this process and finishes the release.
+        """
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        code = ('import sys; sys.path[0] = sys.argv.pop(1); '
+                'from zephyr_labgrid.common import _release_main; '
+                'sys.exit(_release_main(sys.argv[1:]))')
+        proc = subprocess.Popen([sys.executable, '-c', code, root, self.place, self.coordinator],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        out, _ = proc.communicate()
+        lines = out.strip().splitlines()
+        if proc.returncode != 0:
+            raise PlaceLockError('\n'.join(lines) or f'could not release place {self.place}')
+        for line in lines:
+            self.log(line)
 
     def __enter__(self):
         self.acquire()

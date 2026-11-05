@@ -276,6 +276,8 @@ def test_do_run_with_acquire_uses_place_lock(runner, monkeypatch, lock_dir):
     monkeypatch.setattr(labgrid, 'Environment', FakeEnvironment)
     runner.acquire = True
     runner.do_run('flash')
+    assert calls == ['acquire']         # held until west exits (sysbuild)
+    common.release_process_places()
     assert calls == ['acquire', 'release']
     assert boot.loaded
 
@@ -295,6 +297,7 @@ def test_do_run_releases_on_error(runner, monkeypatch, lock_dir):
     runner.acquire = True
     with pytest.raises(RuntimeError, match='could not load'):
         runner.do_run('flash')
+    common.release_process_places()     # what atexit does when west dies
     assert calls == ['acquire', 'release']
 
 
@@ -320,6 +323,27 @@ def fake_environment(monkeypatch, target, created=None):
 
     import labgrid
     monkeypatch.setattr(labgrid, 'Environment', FakeEnvironment)
+
+
+def test_sysbuild_holds_place_across_images(runner_mod, runner_config, clean_env,
+                                            monkeypatch, lock_dir):
+    """west flash runs the runner once per sysbuild image in one process;
+    the place must stay acquired from the first image to the last."""
+    from zephyr_labgrid import common
+    calls = []
+    monkeypatch.setattr(common, 'run_labgrid_client',
+                        lambda args, coordinator=None: (calls.append(args[-1]) or 0, 'ok'))
+    boot = FakeBootstrap()
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': boot}))
+    for _ in ('mcuboot', 'app'):
+        r = create(runner_mod, runner_config,
+                   ['--dev-id', 'p', '--env', '/e.yaml', '--acquire'])
+        r.do_run('flash')
+    assert calls == ['acquire']
+    assert len(boot.loaded) == 2
+    common.release_process_places()
+    common.release_process_places()     # idempotent
+    assert calls == ['acquire', 'release']
 
 
 class FakeReset:

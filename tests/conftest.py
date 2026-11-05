@@ -49,6 +49,21 @@ def zephyr_runners():
     return ZEPHYR_BASE
 
 
+from zephyr_labgrid import common as _common  # noqa: E402
+
+REAL_RELEASE_IN_CHILD = _common.PlaceLock._release_in_child
+
+
+@pytest.fixture(autouse=True)
+def release_in_process(monkeypatch):
+    """Run the release in this process so that tests can fake labgrid-client.
+    tests/test_common.py covers the real child process."""
+    def run(self):
+        if not _common.release_if_unused(self.place, self.coordinator, log=self.log):
+            raise _common.PlaceLockError(f'could not release place {self.place}')
+    monkeypatch.setattr(_common.PlaceLock, '_release_in_child', run)
+
+
 @pytest.fixture
 def lock_dir(tmp_path, monkeypatch):
     monkeypatch.setenv('ZEPHYR_LABGRID_LOCK_DIR', str(tmp_path / 'locks'))
