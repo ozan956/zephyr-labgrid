@@ -95,8 +95,12 @@ def resolve_place(args):
             args.place = mine[0]
     if not args.acquire:
         common.check_owned(places, args.place)
-    args.env = common.resolve_env(args.env, args.place, env_dir=args.env_dir,
-                                  tags=places[args.place]['tags'])
+    tags = places[args.place]['tags']
+    args.env = common.resolve_env(args.env, args.place, env_dir=args.env_dir, tags=tags)
+    # The lab owner tags boards whose reset line is wired to RTS; the user
+    # should not have to know that.
+    if '--reset-rts' in str(tags.get('zephyr_pty_args', '')).split(','):
+        args.reset_rts = True
 
 
 def main(argv=None):

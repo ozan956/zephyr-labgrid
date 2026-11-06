@@ -53,6 +53,10 @@ def test_place_from_twister_platform(clean_env, monkeypatch, place_info):
     args = pty.build_parser().parse_args([])
     pty.resolve_place(args)
     assert (args.place, args.env) == ('esp', '/e.yaml')
+    assert not args.reset_rts
+    places['esp']['tags']['zephyr_pty_args'] = '--reset-rts'
+    pty.resolve_place(args)
+    assert args.reset_rts                   # from the tag of the place
 
 
 def test_defaults_come_from_environment(clean_env, monkeypatch):
