@@ -31,7 +31,7 @@ Install the Python packages in the environment that runs west.
 
    $ pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
    $ git clone https://github.com/ozan956/zephyr-labgrid.git
-   $ pip install ./zephyr-labgrid
+   $ pip install -e ./zephyr-labgrid
    $ export ZEPHYR_EXTRA_MODULES=$PWD/zephyr-labgrid
 
 2. Describe the board for the exporter
@@ -90,39 +90,56 @@ from the same directory every time.
 
    $ export ZEPHYR_LABGRID_ENV_DIR=$PWD/zephyr-labgrid/examples
 
-5. Check, flash, test
----------------------
+5. Take the board, check, flash, test
+-------------------------------------
+
+Take the place, as you would take a board on your desk.
 
 .. code-block:: console
 
+   $ labgrid-client -p stm32f746g-disco acquire
    $ labgrid-twister-check -p stm32f746g-disco
 
-This prints one line per check. A warning that the place is not acquired
-is fine because the commands below use ``--acquire``. Fix any ``FAIL`` lines first.
+The check prints one line per check. Fix any ``FAIL`` lines first.
 
 .. code-block:: console
 
    $ west build -b stm32f746g_disco samples/hello_world
-   $ west flash -r labgrid -- --dev-id=stm32f746g-disco --acquire
+   $ west flash -r labgrid
 
+The runner finds the place itself, it is the one you hold for the board.
 Watch the console in a second terminal and reset the board.
 
 .. code-block:: console
 
-   $ labgrid-pty -p stm32f746g-disco --acquire       # Ctrl-C to stop
-   $ west reset -r labgrid -- --dev-id=stm32f746g-disco --acquire
+   $ labgrid-pty                       # Ctrl-C to stop
+   $ west reset -r labgrid
 
 You should see ``Hello World! stm32f746g_disco/stm32f746xx``.
 
-Run Twister on the board.
+Run Twister on the board. Compared with a board on your desk,
+``--device-serial /dev/ttyACM0`` becomes ``--device-serial-pty labgrid-pty
+--west-runner labgrid``.
 
 .. code-block:: console
 
    $ ./scripts/twister -p stm32f746g_disco/stm32f746xx --device-testing \
-       --device-serial-pty "labgrid-pty,-p,stm32f746g-disco,--acquire" \
-       --west-runner labgrid \
-       --west-flash="--dev-id=stm32f746g-disco,--acquire,--wait-console=30" \
+       --device-serial-pty labgrid-pty --west-runner labgrid \
        -T samples/hello_world -T samples/subsys/testsuite/pytest/shell
+
+Give the board back when you are done.
+
+.. code-block:: console
+
+   $ labgrid-client -p stm32f746g-disco release
+
+To let Twister take a free board for each test instead, write a hardware
+map once and run Twister with it, see :ref:`flash-and-test`.
+
+.. code-block:: console
+
+   $ labgrid-twister-hwmap -o map.yml
+   $ ./scripts/twister --device-testing --hardware-map map.yml -T samples/hello_world
 
 Next
 ----

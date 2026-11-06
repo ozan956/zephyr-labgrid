@@ -7,7 +7,53 @@ For Zephyr developers
 =====================
 
 You have a Zephyr workspace and want to flash, reset or test on a board
-that is not on your desk but on a labgrid exporter in the lab.
+that is not on your desk but on a labgrid exporter in the lab. Your daily
+commands stay almost the same.
+
+.. _daily-routine:
+
+Your routine, next to a board on your desk
+------------------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Task
+     - Board on your desk
+     - Board in the lab
+   * - Get the board
+     - plug in the USB cable
+     - ``labgrid-client -p PLACE acquire``, and ``release`` when you are done
+   * - Build
+     - ``west build -b BOARD app``
+     - the same
+   * - Flash
+     - ``west flash``
+     - ``west flash -r labgrid``, or ``west flash`` with labgrid as
+       :ref:`default runner <default-runner>`
+   * - Reset
+     - ``west reset`` or the reset button
+     - ``west reset -r labgrid``
+   * - Console
+     - ``minicom -D /dev/ttyACM0``
+     - ``labgrid-pty``
+   * - Debug
+     - ``west debug``
+     - not yet
+   * - Twister on your board
+     - ``twister -p BOARD --device-testing --device-serial /dev/ttyACM0 -T tests``
+     - ``twister -p BOARD --device-testing --device-serial-pty labgrid-pty --west-runner labgrid -T tests``
+   * - Twister on several boards, write the map once
+     - ``twister --generate-hardware-map map.yml``
+     - ``labgrid-twister-hwmap -o map.yml``
+   * - Twister on several boards, run
+     - ``twister --device-testing --hardware-map map.yml -T tests``
+     - the same
+
+No command needs a place name. The runner and ``labgrid-pty`` use the
+place you hold for the board, and hardware maps take each place for one
+test and give it back.
 
 What you need
 -------------
@@ -15,21 +61,22 @@ What you need
 You get these from your lab owner.
 
 -  the coordinator address, for example ``lab-coordinator:20408``
--  the place name of your board, for example ``stm32f746g-disco-1``
 -  the directory with the lab's labgrid environment files, for example
-   ``/shared/labgrid-envs`` (or a single environment file for your board)
+   ``/shared/labgrid-envs``
 
-Install these on your machine, in the Python environment that runs ``west`` and ``twister``.
+Install these on your machine, in the Python environment that runs ``west``
+and ``twister``. Python 3.11 or newer is needed.
 
 .. code-block:: console
 
    $ pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
    $ git clone https://github.com/ozan956/zephyr-labgrid.git
-   $ pip install ./zephyr-labgrid
+   $ pip install -e ./zephyr-labgrid
 
-The module needs labgrid master, because no labgrid release has everything it uses
-yet. ``pip install`` gives you ``labgrid-pty``, ``labgrid-twister-hwmap`` and
-``labgrid-twister-check``.
+The module needs labgrid master, because no labgrid release has everything
+it uses yet. ``pip install`` gives you ``labgrid-pty``,
+``labgrid-twister-hwmap`` and ``labgrid-twister-check``. With ``-e`` the
+tools and the runner always come from the same checkout.
 
 Enable the module
 -----------------
@@ -61,8 +108,8 @@ Point it at the lab
    $ export LG_COORDINATOR=lab-coordinator:20408
    $ export ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
 
-The runner and ``labgrid-pty`` find the environment file of a place in this
-order.
+Put both lines into your shell profile. The runner and ``labgrid-pty``
+find the environment file of a place in this order.
 
 1. ``--env FILE`` on the command line
 2. ``$ZEPHYR_LABGRID_ENV``
@@ -70,25 +117,21 @@ order.
 4. the ``zephyr_env`` tag of the place, relative to ``--env-dir`` or
    ``$ZEPHYR_LABGRID_ENV_DIR``
 
-With tagged places you only need to know the place name.
+Hold a board
+------------
 
-Who holds the place
--------------------
-
-A labgrid place belongs to one user at a time. Either take it by hand.
+A labgrid place belongs to one user at a time, like a board on a desk.
+Take it before you work with it and give it back afterwards.
 
 .. code-block:: console
 
+   $ labgrid-client places
    $ labgrid-client -p stm32f746g-disco-1 acquire
-   $ ...
    $ labgrid-client -p stm32f746g-disco-1 release
 
-or pass ``--acquire`` to the runner and to ``labgrid-pty``. They take the
-place while they run and give it back afterwards. A runner and a
-``labgrid-pty`` running at the same time on your machine share the place,
-and a place you acquired by hand is never released by them. Do not start
-two Twister runs on the same place from the same user and host at once.
-They would share the board instead of waiting for each other.
+``west flash``, ``west reset`` and ``labgrid-pty`` never take a place for
+you. When you hold none for the board, they say which places are free
+and print the ``acquire`` command.
 
 Check the setup
 ---------------
@@ -97,10 +140,11 @@ Check the setup
 
    $ labgrid-twister-check -p stm32f746g-disco-1
 
-prints one line per check. It covers Python packages, tools on ``PATH``, environment
-variables, coordinator, place and tags, environment file, flash tool on the
-exporter (``--tool esptool`` for script based flashing) and the console. Add
-``--hwmap hwmap.yaml`` to check a Twister hardware map too. Fix the ``FAIL``
+prints one line per check. It covers Python packages, tools on ``PATH``,
+environment variables, coordinator, place and tags, environment file,
+flash tool on the exporter (``--tool esptool`` for script based flashing)
+and the console. The last checks need the place held by you. Add
+``--hwmap map.yml`` to check a Twister hardware map too. Fix the ``FAIL``
 lines first.
 
 Flash and reset
@@ -109,182 +153,169 @@ Flash and reset
 .. code-block:: console
 
    $ west build -b stm32f746g_disco samples/hello_world
-   $ west flash -r labgrid -- --dev-id=stm32f746g-disco-1 --acquire
-   $ west reset -r labgrid -- --dev-id=stm32f746g-disco-1 --acquire
+   $ west flash -r labgrid
+   $ west reset -r labgrid
 
-``--dev-id`` is the place name. If ``LG_PLACE`` is set you can leave it out.
-``--dry-run`` prints what would happen without touching the lab.
+The runner uses the place you hold whose ``zephyr_platform`` tag fits the
+build. When you hold several, pick one with ``--dev-id`` or ``$LG_PLACE``.
+A place whose tag does not fit the build is refused, so a native_sim
+binary never ends up on an STM32 board. ``--dry-run`` prints what would
+happen without flashing.
 
 Runner options after ``--``.
 
-+----------------------------------+----------------------------------+
-| Option                           | Meaning                          |
-+==================================+==================================+
-| ``--dev-id PLACE``               | labgrid place (default           |
-|                                  | ``$LG_PLACE``)                   |
-+----------------------------------+----------------------------------+
-| ``--env FILE``                   | labgrid environment file (see    |
-|                                  | the lookup order above)          |
-+----------------------------------+----------------------------------+
-| ``--env-dir DIR``                | directory for a relative         |
-|                                  | ``zephyr_env`` tag (default      |
-|                                  | ``$ZEPHYR_LABGRID_ENV_DIR``)     |
-+----------------------------------+----------------------------------+
-| ``--acquire``                    | acquire the place and release it |
-|                                  | when west exits                  |
-+----------------------------------+----------------------------------+
-| ``--driver NAME``                | labgrid driver to flash with,    |
-|                                  | when the environment has more    |
-|                                  | than one                         |
-+----------------------------------+----------------------------------+
-| ``--power-cycle``                | power cycle the place before     |
-|                                  | flashing (needs a PowerProtocol  |
-|                                  | driver)                          |
-+----------------------------------+----------------------------------+
-| ``--reset`` / ``--no-reset``     | reset after flashing             |
-+----------------------------------+----------------------------------+
-| ``--file FILE``,                 | flash another file than the      |
-| ``--file-type TYPE``             | build output                     |
-+----------------------------------+----------------------------------+
-| ``--timeout SECONDS``            | time limit for labgrid resources |
-|                                  | and flash scripts                |
-+----------------------------------+----------------------------------+
-| ``--wait-console SECONDS``       | wait for a ``labgrid-pty`` on    |
-|                                  | this machine to have the console |
-|                                  | open before flashing (Twister)   |
-+----------------------------------+----------------------------------+
-| ``--dry-run``                    | log what would be done, do       |
-|                                  | nothing                          |
-+----------------------------------+----------------------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Option
+     - Meaning
+   * - ``--dev-id PLACE``
+     - labgrid place (default ``$LG_PLACE``, then the place you hold for the board)
+   * - ``--env FILE``
+     - labgrid environment file (see the lookup order above)
+   * - ``--env-dir DIR``
+     - directory for a relative ``zephyr_env`` tag (default ``$ZEPHYR_LABGRID_ENV_DIR``)
+   * - ``--ignore-platform``
+     - flash even when the ``zephyr_platform`` tag does not fit the build
+   * - ``--driver NAME``
+     - labgrid driver to flash with, when the environment has more than one
+   * - ``--power-cycle``
+     - power cycle the place before flashing (needs a PowerProtocol driver)
+   * - ``--reset`` / ``--no-reset``
+     - reset after flashing
+   * - ``--file FILE``, ``--file-type TYPE``
+     - flash another file than the build output
+   * - ``--timeout SECONDS``
+     - time limit for labgrid resources and flash scripts
+   * - ``--wait-console SECONDS``
+     - wait for a ``labgrid-pty`` on this machine to open the console before
+       flashing. By default the runner waits only when one is starting, as
+       under Twister. 0 never waits.
+   * - ``--dry-run``
+     - log what would be done, do nothing
 
 The runner flashes ``zephyr.hex`` if it exists, else ``zephyr.bin``, else
-``zephyr.elf``. The environment file decides how, with a ``BootstrapProtocol``
-driver such as OpenOCD, or with a ``FlashScriptDriver`` that runs a vendor
-tool on the exporter. Pick one with ``--driver`` if the file has both.
+``zephyr.elf``. The environment file decides how, with a
+``BootstrapProtocol`` driver such as OpenOCD, or with a
+``FlashScriptDriver`` that runs a vendor tool on the exporter. Pick one
+with ``--driver`` if the file has both.
 
 ``west reset`` uses a ResetProtocol driver, else a PowerProtocol driver
-(power cycle), else OpenOCD (``reset run``). After flashing, ``--reset`` tries
-the same list but does not fail when there is none, since OpenOCD and most flash
-tools reset the board themselves.
+(power cycle), else OpenOCD (``reset run``).
 
 Sysbuild builds (MCUboot and application, several cores) are flashed one
-image after the other in one ``west flash`` call. With ``--acquire`` the place
-stays acquired from the first image to the last.
+image after the other in one ``west flash`` call, all on the same place.
 
-For boards flashed over their console UART (ESP32 dev kits), close the console
-(``labgrid-pty``, ``labgrid-client console``) before ``west flash``, or the
-flash tool and the console fight over the port.
+For boards flashed over their console UART (ESP32 dev kits), close the
+console (``labgrid-pty``, ``labgrid-client console``) before ``west flash``,
+or the flash tool and the console fight over the port.
+
+.. _default-runner:
 
 Make labgrid the default runner
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-So that a plain ``west flash`` (and ``west build -t flash``) goes to the lab,
-set the runner and its arguments when you build.
+So that a plain ``west flash`` goes to the lab, set the runner when you
+build.
 
 .. code-block:: console
 
-   $ west build -b stm32f746g_disco samples/hello_world -- \
-       -DBOARD_FLASH_RUNNER=labgrid \
-       '-DBOARD_RUNNER_ARGS_labgrid=--dev-id=stm32f746g-disco-1;--acquire'
+   $ west build -b stm32f746g_disco samples/hello_world -- -DBOARD_FLASH_RUNNER=labgrid
    $ west flash
+
+For sysbuild builds keep passing ``-r labgrid``, because the option does
+not reach the images of a sysbuild build.
 
 Watch the console
 -----------------
 
 .. code-block:: console
 
-   $ labgrid-pty -p stm32f746g-disco-1 --acquire     # Ctrl-C to stop
+   $ labgrid-pty
 
-``--reset-rts`` pulses the RTS line after connecting, which resets ESP32
-style boards so you see the boot banner. ``labgrid-client -p PLACE console``
-works too and needs ``microcom`` or ``telnet``.
+``labgrid-pty`` opens the console of the one place you hold. Pass ``-p
+PLACE`` when you hold several. For boards whose reset line is wired to RTS
+(ESP32 dev kits) the lab owner tags the place, and ``labgrid-pty`` then
+resets the board after connecting so that you see the boot banner. Stop it
+with Ctrl-C. ``labgrid-client -p PLACE console`` works too and needs
+``microcom`` or ``telnet``.
 
 ``labgrid-pty`` exits when its input closes. Run it in a terminal, or keep
-the input open (``sleep 60 | labgrid-pty ...``).
+the input open (``sleep 60 | labgrid-pty``).
 
-Run Twister without a hardware map
-----------------------------------
+Run Twister on your board
+-------------------------
 
-For one board this works like ``--device-serial`` with a local board.
+Where you would pass ``--device-serial /dev/ttyACM0`` for a board on your
+desk, pass ``--device-serial-pty labgrid-pty --west-runner labgrid``.
 
 .. code-block:: console
 
    $ ./scripts/twister -p stm32f746g_disco/stm32f746xx --device-testing \
-       --device-serial-pty "labgrid-pty,-p,stm32f746g-disco-1,--acquire" \
-       --west-runner labgrid \
-       --west-flash="--dev-id=stm32f746g-disco-1,--acquire,--wait-console=30" \
+       --device-serial-pty labgrid-pty --west-runner labgrid \
        -T tests/kernel/common
 
--  ``--device-serial-pty`` starts ``labgrid-pty`` for the console. Commas
-   separate its arguments.
--  ``--west-runner labgrid`` and ``--west-flash`` make every flash go through
-   the place.
--  ``--wait-console=30`` makes the flash wait until the console is open.
-   Twister starts both at the same time, and the board would otherwise boot
-   before anyone listens.
+Twister starts ``labgrid-pty`` for the console and ``west flash -r
+labgrid`` for every test. Both use the place you hold for the platform,
+and the flash waits until the console is open, so no boot output is lost.
 
 For a board whose console port is also its flash port (ESP32 with a
-USB-UART bridge), add ``--flash-before`` to Twister, drop ``--wait-console``
-and add ``--reset-rts`` to the ``labgrid-pty`` arguments.
+USB-UART bridge), add ``--flash-before``, so that Twister flashes before it
+opens the console.
 
 .. code-block:: console
 
    $ ./scripts/twister -p esp32_devkitc/esp32/procpu --device-testing --flash-before \
-       --device-serial-pty "labgrid-pty,-p,esp32-devkitc,--acquire,--reset-rts" \
-       --west-runner labgrid --west-flash="--dev-id=esp32-devkitc,--acquire" \
-       -T samples/hello_world
+       --device-serial-pty labgrid-pty --west-runner labgrid -T samples/hello_world
 
-Run Twister with a hardware map
--------------------------------
+Run Twister on any free board
+-----------------------------
 
-For several boards, CI and shared setups, write the places into a Twister
-hardware map. If the places are tagged, generate it.
+For several boards, CI and shared setups, write a hardware map once, as
+``twister --generate-hardware-map`` does for boards on your desk. Then run
+Twister with it as usual.
 
 .. code-block:: console
 
-   $ labgrid-twister-hwmap --acquire -o hwmap.yaml
-   $ ./scripts/twister --device-testing --hardware-map hwmap.yaml -T tests/kernel/common
+   $ labgrid-twister-hwmap -o map.yml
+   $ ./scripts/twister --device-testing --hardware-map map.yml -T tests/kernel/common
 
-One entry looks like this.
+You do not need to hold the places. Each test takes its place when it
+starts and gives it back when it ends, and a place you hold already stays
+yours. When someone else has the place, the test waits for it, 300 seconds
+by default (``labgrid-twister-hwmap --wait SECONDS``). Twister runs one
+worker per entry, so several boards of the same platform are tested in
+parallel.
 
-.. code:: yaml
-
-   - connected: true
-     id: stm32f746g-disco-1
-     platform: stm32f746g_disco/stm32f746xx
-     product: labgrid
-     runner: labgrid
-     runner_params:
-       - --dev-id=stm32f746g-disco-1
-       - --env=/shared/labgrid-envs/stm32f746g_disco/labgrid.yaml
-       - --wait-console=30
-       - --acquire
-     serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-envs/stm32f746g_disco/labgrid.yaml,--acquire"
-     flash_timeout: 120
-
-Keep ``id`` set, because Twister drops ``runner_params`` when it is empty. Twister runs
-one worker per entry, so several boards of the same platform are tested in
-parallel. The pytest harness (``harness: pytest``) reads the same fields.
+``-p PLATFORM`` and ``--place NAME`` limit the map to some places. The map
+names the places, so write it again when the lab gets new boards.
 
 If something goes wrong
 -----------------------
 
--  ``labgrid runner needs --dev-id or $LG_PLACE``. Pass the place name.
+-  ``you hold no place for BOARD``. Take one of the free places the
+   message lists, ``labgrid-client -p PLACE acquire``.
+-  ``you hold several places for BOARD``. Pick one with ``--dev-id`` (or
+   ``-p`` for ``labgrid-pty``).
+-  ``place ... is acquired by ...``. Someone else holds it.
+   ``labgrid-client places`` shows who.
+-  ``place ... is for ..., the build is for ...``. The place has another
+   board. Use the right place, or ``--ignore-platform``.
 -  ``place ... has zephyr_env=..., a relative path``. Set
    ``ZEPHYR_LABGRID_ENV_DIR``, or pass ``--env``.
--  ``could not acquire place``. Someone else holds it. ``labgrid-client places``
-   shows who. Twister reports this as a flash or serial error.
--  ``place ... is not acquired``. Acquire it, or add ``--acquire``.
 -  ``no flash driver (BootstrapProtocol or FlashScriptDriver)``. The
    environment file has no flash driver, or the place lacks the probe
    resource. Ask the lab owner.
 -  ``the serial server did not answer the RFC2217 purge request``. The
-   exporter runs ser2net 4.6.0, and ``labgrid-pty`` continues without purge. Set
-   ``LG_PTY_NO_PURGE=1`` to skip the one second probe. See
+   exporter runs ser2net 4.6.0, and ``labgrid-pty`` continues without
+   purge. Set ``LG_PTY_NO_PURGE=1`` to skip the one second probe. See
    :ref:`check-exporter-host`.
--  Twister reports ``Serial Device Error`` when ``labgrid-pty`` could not start.
-   Run the ``serial_pty`` command from the Twister log by hand.
--  Twister reports ``Device issue (Flash error?)``. Run the ``west flash``
-   command from the Twister log by hand, the flash tool output tells more.
--  ``cannot import name 'Environment' from 'labgrid'``. The current directory
-   contains a ``labgrid`` folder (a labgrid clone). Run from another directory.
+-  Twister reports ``Serial Device Error`` when ``labgrid-pty`` could not
+   start. Run ``labgrid-pty`` by hand to see why.
+-  Twister reports ``Timeout during flashing`` or
+   ``Device issue (Flash error?)``. The cause is in ``device.log`` of the test. With
+   ``unknown arguments`` there, ``--west-runner labgrid`` is missing.
+-  ``cannot import name 'Environment' from 'labgrid'``. The current
+   directory contains a ``labgrid`` folder (a labgrid clone). Run from
+   another directory.

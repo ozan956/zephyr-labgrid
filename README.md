@@ -14,7 +14,10 @@ Feedback and reports from other labs and boards are very welcome.
 ## Requirements
 
 - Linux or macOS (Twister's `--device-serial-pty` does not exist on Windows)
-- A Zephyr workspace (tested with Zephyr 4.5)
+- Zephyr 4.4 or newer (tested with 4.5). Zephyr 3.7 and 4.0 can not load
+  runners from modules and reject the module for the whole workspace, 4.1 to
+  4.3 lack runner features it uses.
+- Python 3.11 or newer
 - **labgrid master**, because no labgrid release has everything this module uses yet
 - A labgrid coordinator and exporter with your boards. Without a lab, start
   with [One board on your desk](https://ozan956.github.io/zephyr-labgrid/quickstart/).
@@ -26,7 +29,7 @@ git clone https://github.com/ozan956/zephyr-labgrid.git
 
 # in the Python environment that runs west and twister
 pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
-pip install ./zephyr-labgrid
+pip install -e ./zephyr-labgrid
 
 # Zephyr loads the runner from the checkout, so add it to west.yml (see docs) or
 export ZEPHYR_EXTRA_MODULES=$PWD/zephyr-labgrid
@@ -34,33 +37,33 @@ export ZEPHYR_EXTRA_MODULES=$PWD/zephyr-labgrid
 
 ## Use it
 
-Your lab owner tells you the coordinator address and the place name. The
-place carries a `zephyr_env` tag that points to the labgrid environment
-file for the board, and `ZEPHYR_LABGRID_ENV_DIR` is the directory those files
-live in.
+Your daily commands stay almost the same as with a board on your desk.
+
+| Task | Board on your desk | Board in the lab |
+|---|---|---|
+| Get the board | plug in the USB cable | `labgrid-client -p PLACE acquire`, and `release` when you are done |
+| Flash | `west flash` | `west flash -r labgrid` |
+| Reset | `west reset` | `west reset -r labgrid` |
+| Console | `minicom -D /dev/ttyACM0` | `labgrid-pty` |
+| Twister on your board | `twister -p BOARD --device-testing --device-serial /dev/ttyACM0` | `twister -p BOARD --device-testing --device-serial-pty labgrid-pty --west-runner labgrid` |
+| Twister on several boards, write the map once | `twister --generate-hardware-map map.yml` | `labgrid-twister-hwmap -o map.yml` |
+| Twister on several boards, run | `twister --device-testing --hardware-map map.yml` | the same |
+
+No command needs a place name. The runner and `labgrid-pty` use the place
+you hold for the board. With a hardware map, each test takes a free place
+and gives it back, and waits when someone else has it. Your lab owner tells
+you the coordinator address and the directory with the labgrid environment
+files.
 
 ```sh
 export LG_COORDINATOR=lab-coordinator:20408
 export ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
 labgrid-twister-check -p stm32f746g-disco          # finds setup problems
-
-# flash and reset
-west build -b stm32f746g_disco samples/hello_world
-west flash -r labgrid -- --dev-id=stm32f746g-disco --acquire
-west reset -r labgrid -- --dev-id=stm32f746g-disco --acquire
-
-# Twister, like --device-serial for a local board; no hardware map needed
-./scripts/twister -p stm32f746g_disco/stm32f746xx --device-testing \
-    --device-serial-pty "labgrid-pty,-p,stm32f746g-disco,--acquire" \
-    --west-runner labgrid \
-    --west-flash="--dev-id=stm32f746g-disco,--acquire,--wait-console=30" \
-    -T samples/hello_world
 ```
 
 To make plain `west flash` use the lab, build with
-`-- -DBOARD_FLASH_RUNNER=labgrid '-DBOARD_RUNNER_ARGS_labgrid=--dev-id=stm32f746g-disco;--acquire'`.
-For several boards and CI, generate a Twister hardware map with
-`labgrid-twister-hwmap`. The details are in [For Zephyr developers](https://ozan956.github.io/zephyr-labgrid/flash-and-test/).
+`-- -DBOARD_FLASH_RUNNER=labgrid`. The details are in
+[For Zephyr developers](https://ozan956.github.io/zephyr-labgrid/flash-and-test/).
 
 ## What works and what does not
 
@@ -75,8 +78,8 @@ For several boards and CI, generate a Twister hardware map with
 | Twister with or without a hardware map, parallel boards, fixtures, `--flash-before`, `--retry-failed` | yes |
 | pytest `mcumgr` fixture | no, it needs a real serial port and the console is a pty |
 | Boards with several console UARTs, Twister `required_devices` | no, one console per place |
-| Waiting for a busy place | no, a test fails when someone else holds the place |
-| Sysbuild on hardware | the place lock is held across images (unit tested), not yet tried on a board |
+| Waiting for a busy place | yes, with hardware maps (300 s by default) |
+| Sysbuild on hardware | all images go to the same place (unit tested), not yet tried on a board |
 
 ## Documentation
 

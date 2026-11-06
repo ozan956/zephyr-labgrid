@@ -35,19 +35,20 @@ Hardware maps
 Locks and parallel runs
 -----------------------
 
--  Decide up front who holds the labgrid lock. It can be the user, a CI account, or
-   the tools with ``--acquire``. Most Twister "Flash error" and "Serial Device
-   Error" reports are a place that belongs to someone else.
+-  Hold the place for interactive work, and run Twister with a map from
+   ``labgrid-twister-hwmap`` when the boards are shared. Most Twister "Flash
+   error" and "Serial Device Error" reports are a place that belongs to
+   someone else, ``device.log`` of the test says who.
 -  Run one Twister run per place and user at a time. labgrid knows a place
    owner only as host and user, so two runs of the same user on the same host
    share the board. CI executors that share a host and a user should each set
    their own ``LG_USERNAME``.
--  With ``--acquire`` the place is free for a moment between two tests, and
-   another user can take it. For a dedicated test farm, let a CI account
-   hold the places for the whole run instead.
--  Twister's ``pre_script`` and ``post_script`` get no arguments and no extra
-   environment, and their exit codes are only logged. A failed acquire
-   there shows up later as a flash or serial error. Prefer ``--acquire``.
+-  With a map the place is free for a moment between two tests, and another
+   user can take it. The next test then waits. For a dedicated test farm,
+   let a CI account hold the places for the whole run instead.
+-  Do not lock places with Twister's ``pre_script`` and ``post_script``. They
+   get no arguments, and their exit codes are only logged, so a failed
+   acquire shows up later as a flash or serial error.
 -  Every Twister worker runs its own ``west flash`` and ``labgrid-pty``. In your
    own scripts, do not share one labgrid Target object between threads or
    boards, because labgrid drivers are not thread safe.
@@ -71,8 +72,9 @@ Flashing
 -  Prefer the hex file, because OpenOCD and most tools take the address from it.
    For raw binaries use ``{address}`` in ``FlashScriptDriver`` args, the runner
    reads the offset from the build.
--  Select the board only with ``--dev-id``. Never put a place name into an
-   environment file, use ``!template $LG_PLACE`` instead.
+-  Never put a place name into an environment file, use
+   ``!template $LG_PLACE``. The runner and ``labgrid-pty`` set it to the
+   place they use.
 -  With ``FlashScriptDriver``, let the script find the probe from
    ``{device.path}`` on the exporter instead of hard coding serial numbers.
    One script then serves every board of the family.

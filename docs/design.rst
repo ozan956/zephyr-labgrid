@@ -64,6 +64,29 @@ labgrid depends on ``pyserial-labgrid``, a fork of pyserial that installs the
 same ``serial`` package. Do not add plain ``pyserial`` as a dependency, because it
 overwrites the fork.
 
+Places and owners
+-----------------
+
+``common.lab_places()`` reads every place of the coordinator with its tags,
+owner and allowed users, in one session in a child process
+(``zephyr_labgrid.placeinfo``). One query gives the runner and
+``labgrid-pty`` all they need.
+
+The owner name of the user is ``host/user``, as labgrid-client builds it
+(``LG_HOSTNAME`` and ``LG_USERNAME`` override both parts). A place is the
+user's when it is acquired by that name or the name is in its allowed list.
+
+Without a place, the runner takes the one place of the user whose
+``zephyr_platform`` tag fits ``CONFIG_BOARD_TARGET`` of the build. A tag
+without qualifiers fits every target of the board. With a place it checks
+the owner and that the tag fits the build, unless ``--ignore-platform``.
+``labgrid-pty`` takes the place of the user for ``$TWISTER_PLATFORM``, which
+Twister sets for the ``serial_pty`` command, or else the one place of the
+user. It also applies ``--reset-rts`` from the ``zephyr_pty_args`` tag.
+
+Neither tool acquires a place for a user. Only hardware maps make them do
+it, see the place locks below.
+
 Finding the environment file
 ----------------------------
 
@@ -79,7 +102,7 @@ so a ``labgrid/`` clone in the current directory can not hide the installed
 package.
 
 The runner resolves the environment in ``do_run``, not when it is created,
-so ``west flash -H`` and argument errors never talk to the coordinator.
+so that argument errors never talk to the coordinator.
 
 Flashing and resetting
 ----------------------
@@ -116,8 +139,10 @@ with the current interpreter), not the client API, to keep the process to
 one coordinator session. ``LG_ENV`` is removed from its environment, or
 labgrid-client would act on every place in the file.
 
-Twister starts ``labgrid-pty`` and ``west flash`` at the same time when the
-board is flashed with the console open, and both may carry ``--acquire``.
+Hardware maps from ``labgrid-twister-hwmap`` pass the hidden ``--acquire``
+and ``--acquire-wait`` options to the runner and to ``labgrid-pty``. Twister
+starts both at the same time when the board is flashed with the console
+open, so both acquire.
 The tools on one host coordinate through a lock directory.
 
 ::
@@ -143,6 +168,11 @@ and it collects the processes to kill before the SIGTERM. A child started
 after that survives the SIGKILL and finishes the release. ``labgrid-pty``
 starts the release before it closes the console for the same reason. The
 child runs in its own session and ignores SIGTERM, SIGINT and SIGHUP.
+
+When labgrid-client answers that someone else holds the place, the tool
+tries again every 5 s for ``--acquire-wait`` seconds. "You have already
+acquired place X on HOST" means the user holds it on another host, which
+counts as someone else.
 
 A marker without any live tool means a run was killed before it could
 release, with SIGKILL alone for example. The place may have been acquired
@@ -173,9 +203,19 @@ two threads use a driver at once.
 
 Opening a remote console takes seconds (session, ssh, RFC2217). Twister
 assumes the pty is ready when the process has started and flashes at once,
-so the boot output was lost about one time in five. ``labgrid-pty`` writes
-``console-<pid>.ready`` once the console is open, and the runner's
-``--wait-console`` waits for it.
+so the boot output was lost about one time in five.
+
+``labgrid-pty`` writes ``console-<pid>.starting`` as soon as it knows the
+place and ``console-<pid>.ready`` once the console is open, next to the lock
+files. Without ``--wait-console`` the runner waits up to 30 s for the ready
+marker when a live labgrid-pty for the place is starting or open. Twister
+passes nothing to ``west flash`` that says a console is coming, so when the
+parent process has ``twister`` in its command line (Linux ``/proc``) the
+runner first looks for a starting labgrid-pty for 5 s. With Twister's
+``--flash-before`` the console opens after flashing, and the runner does not
+look. Hardware maps write ``--wait-console`` explicitly, 30 or 0 for boards
+flashed before the console opens. An interactive ``west flash`` does not
+wait.
 
 RFC2217 purge
 ~~~~~~~~~~~~~

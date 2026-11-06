@@ -71,43 +71,39 @@ too. Zephyr users benefit from ``--power-cycle`` and from ``labgrid-client power
 
 labgrid itself ignores these tags. The zephyr-labgrid tools read them.
 
-+----------------------+----------------------+----------------------+
-| Tag                  | Used by              | Meaning              |
-+======================+======================+======================+
-| ``zephyr_platform``  | ``lab                | full Zephyr board    |
-|                      | grid-twister-hwmap`` | target, with the SoC |
-|                      | (required)           | qualifier            |
-+----------------------+----------------------+----------------------+
-| ``zephyr_env``       | runner,              | environment file of  |
-|                      | ``labgrid-pty``,     | the place, a         |
-|                      | check, hwmap         | relative path is     |
-|                      |                      | resolved against the |
-|                      |                      | user's               |
-|                      |                      | ``ZEPH               |
-|                      |                      | YR_LABGRID_ENV_DIR`` |
-+----------------------+----------------------+----------------------+
-| ``zephyr_fixtures``  | hwmap                | comma separated      |
-|                      |                      | Twister fixtures     |
-|                      |                      | (loopback wires,     |
-|                      |                      | sensors)             |
-+----------------------+----------------------+----------------------+
-| ``z                  | hwmap                | ``true`` when the    |
-| ephyr_flash_before`` |                      | console port is also |
-|                      |                      | the flash port (step |
-|                      |                      | 3)                   |
-+----------------------+----------------------+----------------------+
-| ``zephyr_pty_args``  | hwmap                | comma separated      |
-|                      |                      | extra                |
-|                      |                      | ``labgrid-pty``      |
-|                      |                      | arguments, e.g.      |
-|                      |                      | ``--reset-rts``      |
-+----------------------+----------------------+----------------------+
-| ``ze                 | hwmap                | seconds, default 120 |
-| phyr_flash_timeout`` |                      |                      |
-+----------------------+----------------------+----------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
 
-With ``zephyr_env`` set, ``west flash -r labgrid -- --dev-id=PLACE`` finds the
-environment file by itself.
+   * - Tag
+     - Used by
+     - Meaning
+   * - ``zephyr_platform``
+     - runner, ``labgrid-pty``, hwmap
+     - full Zephyr board target, with the SoC qualifier. The runner picks the
+       user's place for a build by it and refuses a build for another
+       board. ``labgrid-pty`` picks the place for a Twister platform by it.
+   * - ``zephyr_env``
+     - runner, ``labgrid-pty``, check, hwmap
+     - environment file of the place, a relative path is resolved against
+       the user's ``ZEPHYR_LABGRID_ENV_DIR``
+   * - ``zephyr_fixtures``
+     - hwmap
+     - comma separated Twister fixtures (loopback wires, sensors)
+   * - ``zephyr_flash_before``
+     - hwmap
+     - ``true`` when the console port is also the flash port (step 3)
+   * - ``zephyr_pty_args``
+     - ``labgrid-pty``, hwmap
+     - comma separated extra ``labgrid-pty`` arguments, for example
+       ``--reset-rts``
+   * - ``zephyr_flash_timeout``
+     - hwmap
+     - seconds for one flash. Without it Twister's
+       ``--device-flash-timeout`` applies.
+
+With these tags set, the runner and ``labgrid-pty`` find the place and its
+environment file by themselves. Users only need the coordinator address.
 
 Share the environment files
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -253,18 +249,17 @@ tags of step 2.
 
 It reads the tags from the table in step 2 and skips places without
 ``zephyr_platform``. ``--env FILE`` is the fallback for places without a
-``zephyr_env`` tag, ``--force-env FILE`` overrides the tag for every place.
-With ``--acquire`` the runner and ``labgrid-pty`` get ``--acquire`` and lock the
-place per test (see step 5). With ``--hooks DIR`` it instead writes one
-acquire and one release script per place and references them as
-``pre_script`` and ``post_script``. Places that are acquired by someone get a
-``notes`` line. ``--wait-console SECONDS`` (default 30) is added to the runner
-for places that are flashed while the console is open, so the flash waits
-until ``labgrid-pty`` has the console.
+``zephyr_env`` tag, ``--force-env FILE`` overrides the tag for every place,
+and ``-p PLATFORM`` or ``--place NAME`` limit the map to some places.
+``--env-dir`` defaults to ``$ZEPHYR_LABGRID_ENV_DIR``.
 
-For a single board users do not need a map, see "Run Twister without a
-hardware map" in :ref:`flash-and-test`. Maps pay off
-for several boards and CI. ``--env-dir`` defaults to ``$ZEPHYR_LABGRID_ENV_DIR``.
+Every entry makes a test take its place when it starts and give it back
+when it ends, so users run Twister with the map without holding the places.
+A place the user holds already stays theirs. When someone else holds a
+place, the test waits for it up to ``--wait SECONDS`` (default 300), and
+``flash_timeout`` grows by that time. Places in use when the map is written
+stay in it with a note. For a single board that the user holds, no map is
+needed, see :ref:`flash-and-test`.
 
 The result looks like this.
 
@@ -277,21 +272,21 @@ The result looks like this.
      runner: labgrid
      runner_params:
        - --dev-id=stm32f746g-disco-1
-       - --env=/shared/labgrid-stm32f7.yaml
+       - --env=/shared/labgrid-envs/stm32f7/labgrid.yaml
+       - --acquire
+       - --acquire-wait=300
        - --wait-console=30
-     serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-stm32f7.yaml"
-     flash_timeout: 120
-     fixtures: []
+     serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-envs/stm32f7/labgrid.yaml,--acquire,--acquire-wait=300"
+     flash_timeout: 360
+
+``--acquire`` and ``--acquire-wait`` are not in the help of the runner and of
+``labgrid-pty``. They are meant for generated maps, users never type them.
 
 Things to keep in mind about the entries.
 
 -  ``id`` must be set. Twister ignores ``runner_params`` when it is empty.
--  ``flash_timeout`` counts the whole ``west flash`` call including the file copy
-   to the exporter. 120 s is a safe start.
--  Twister passes no arguments and no extra environment to ``pre_script``,
-   ``post_script`` and ``post_flash_script``. If you want them to acquire and
-   release the place, write one tiny script per place or read the place name
-   from a file next to the script.
+-  ``flash_timeout`` counts the whole ``west flash`` call, including the
+   wait for a busy place and the file copy to the exporter.
 -  ``fixtures`` describe extra hardware (loopback wires, sensors). They map
    well to labgrid tags, so add them when you generate the map.
 
@@ -304,25 +299,27 @@ labgrid and Twister both have locks and do not know about each other.
    parallel workers only.
 -  labgrid locks a place for one user across the whole lab.
 
-Three models that work.
+Three ways to share the boards.
 
-1. **Users acquire by hand.** The developer runs ``labgrid-client acquire``
-   before Twister and ``release`` after. Good for interactive use.
-2. **CI user holds the places.** A CI account acquires all Zephyr places
-   once, and Twister runs under that account. Other users see the places as
-   busy. Good for a dedicated test farm.
-3. **The tools lock per test.** Generate the map with
-   ``labgrid-twister-hwmap --acquire``. ``west flash`` and ``labgrid-pty`` then
-   acquire the place when they start and release it when the last of them
-   exits. The tools on one host coordinate through a small lock directory
+1. **Users hold places for their own work.** A developer takes a place with
+   ``labgrid-client acquire``, works with ``west flash -r labgrid`` and
+   Twister on it, and releases it afterwards. Good for interactive use.
+2. **Hardware maps take places per test.** Twister runs with a map from
+   ``labgrid-twister-hwmap``, each test takes its place and gives it back.
+   The tools on one host coordinate through a small lock directory
    (``$TMPDIR/zephyr-labgrid-<uid>/``), so the flash does not release the
-   place while the console is still open. A place that a user acquired by
-   hand is never released by the tools. Between two tests the place is free
-   for a moment, so another user can take it, and Twister then reports a flash
-   error for that test.
+   place while the console is still open. Between two tests the place is
+   free for a moment, so another user can take it, and the next test then
+   waits for it. Good for shared boards and for CI.
+3. **A CI account holds the places.** It acquires all Zephyr places once,
+   and Twister runs under that account with a map. The tests keep the
+   places, because they never release a place that was held before. Other
+   users see the places as busy. Good for a dedicated test farm.
 
-Mixing the first two on the same places leads to ``Flash error`` or ``Serial Device Error`` in Twister when the place is taken. Reservations
-(``labgrid-client reserve``) can bridge the models but need scripting.
+labgrid knows a place owner only as host and user. Two Twister runs of the
+same user on the same host therefore share a board instead of waiting for
+each other. CI executors that share a host and a user should each set their
+own ``LG_USERNAME``.
 
 .. _check-exporter-host:
 
@@ -352,9 +349,9 @@ Before handing a place to users, do the full loop once.
    $ labgrid-client -p stm32f746g-disco-1 acquire
    $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd   # every line ok
    $ west build -b stm32f746g_disco samples/hello_world
-   $ west flash -r labgrid -- --dev-id=stm32f746g-disco-1
-   $ labgrid-pty -p stm32f746g-disco-1 &        # console
-   $ west reset -r labgrid -- --dev-id=stm32f746g-disco-1   # expect "Hello World!"
+   $ west flash -r labgrid
+   $ labgrid-pty &                    # console
+   $ west reset -r labgrid            # expect "Hello World!"
    $ kill %1
    $ labgrid-client -p stm32f746g-disco-1 release
 
