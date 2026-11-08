@@ -1,0 +1,17 @@
+{
+    "DEVICE": {
+        "disabled" : false,
+        "binary": "app-device-config.json",
+        "version" : "0.5.00",
+        "signed": true
+    },
+    "ZEPHYRHP": {
+        "disabled": false,
+        "binary": "zephyr.bin",
+        "version" : "1.0.0",
+        "signed": false,
+        "mramAddress": "0x80000000",
+        "cpu_id": "M55_HP",
+        "flags": ["boot"]
+    }
+}

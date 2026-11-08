@@ -1,0 +1,24 @@
+# Alif Ensemble E8 DevKit, M55 high performance core (rtss_hp), flashed with
+# the on-board J-Link into MRAM. {address} is the MRAM address of the image
+# from the build (CONFIG_FLASH_BASE_ADDRESS, 0x80000000), {image} the copied
+# zephyr.bin. The console is UART4 on the J-Link serial port, so SW4 must be
+# in the UART4 position.
+#
+# The board needs an ATOC that boots M55_HP from 0x80000000, written once
+# with SETOOLS, see zephyr-hp.json.
+images:
+  flash-script: jlink-flash.sh
+targets:
+  main:
+    resources:
+      RemotePlace:
+        name: !template $LG_PLACE
+    drivers:
+      SerialDriver: {}
+      FlashScriptDriver:
+        script: flash-script
+        args:
+          - "{device.path}"
+          - "{address}"
+          - "{image}"
+          - "AE822FA0E5597LS0_M55_HP"
