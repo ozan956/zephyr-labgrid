@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 340" width="880" height="340"
+     role="img" aria-label="one machine runs the coordinator, the exporter, west and Twister, the board is plugged into it">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0969da"/></marker>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#59636e"/></marker>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              text-anchor: middle; }
+      .t { font-size: 18px; font-weight: 600; fill: #1f2328; }
+      .s { font-size: 15px; fill: #59636e; }
+      .l { font-size: 15px; fill: #59636e; }
+      .p { font-size: 15px; font-weight: 600; fill: #59636e; text-anchor: start;
+            letter-spacing: 0.04em; text-transform: uppercase; }
+    </style>
+  </defs>
+  <rect x="20" y="34" width="680" height="286" rx="14" fill="#ffffff" stroke="#d1d9e0" stroke-width="1.2"/>
+  <rect x="45" y="70" width="250" height="64" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+  <text x="170.0" y="94.0" class="t">west, Twister</text>
+  <text x="170.0" y="114.0" class="s">labgrid runner, labgrid-pty</text>
+  <rect x="45" y="220" width="250" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.5"/>
+  <text x="170.0" y="244.0" class="t">labgrid-coordinator</text>
+  <text x="170.0" y="264.0" class="s">127.0.0.1:20408</text>
+  <rect x="425" y="70" width="250" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.5"/>
+  <text x="550.0" y="94.0" class="t">OpenOCD, ser2net</text>
+  <text x="550.0" y="114.0" class="s">flash and console</text>
+  <rect x="425" y="220" width="250" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.5"/>
+  <text x="550.0" y="244.0" class="t">labgrid-exporter</text>
+  <text x="550.0" y="264.0" class="s">exporter.yaml</text>
+  <rect x="735" y="70" width="125" height="214" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1.5"/>
+  <text x="797.5" y="182.0" class="t">board</text>
+  <line x1="295" y1="102" x2="423" y2="102" stroke="#0969da" stroke-width="1.8" marker-end="url(#a)"/>
+  <text x="359" y="94.0" class="l">ssh to localhost</text>
+  <line x1="675" y1="102" x2="733" y2="102" stroke="#0969da" stroke-width="1.8" marker-end="url(#a)"/>
+  <text x="704" y="94" class="l">USB</text>
+  <line x1="550" y1="218" x2="550" y2="136" stroke="#0969da" stroke-width="1.8" marker-end="url(#a)"/>
+  <text x="575" y="182" class="l">starts</text>
+  <line x1="170" y1="134" x2="170" y2="218" stroke="#59636e" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#m)"/>
+  <text x="205" y="182" class="l">places</text>
+  <line x1="423" y1="252" x2="297" y2="252" stroke="#59636e" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#m)"/>
+  <text x="360" y="244" class="l">resources</text>
+</svg>

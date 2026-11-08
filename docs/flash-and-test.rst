@@ -133,19 +133,49 @@ Take it before you work with it and give it back afterwards.
 you. When you hold none for the board, they say which places are free
 and print the ``acquire`` command.
 
+.. _check-output:
+
 Check the setup
 ---------------
 
 .. code-block:: console
 
-   $ labgrid-twister-check -p stm32f746g-disco-1
+   $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd
 
 prints one line per check. It covers Python packages, tools on ``PATH``,
 environment variables, coordinator, place and tags, environment file,
 flash tool on the exporter (``--tool esptool`` for script based flashing)
 and the console. The last checks need the place held by you. Add
 ``--hwmap map.yml`` to check a Twister hardware map too. Fix the ``FAIL``
-lines first.
+lines first. On a working setup it looks like this.
+
+.. code-block:: text
+
+   ok    python package labgrid 26.1.dev238
+   ok    python package pyserial-labgrid 3.5.0.2
+   ok    python package PyYAML 6.0.3
+   ok    labgrid-pty found at /home/me/.venv/bin/labgrid-pty
+   ok    labgrid-client found at /home/me/.venv/bin/labgrid-client
+         no --env or ZEPHYR_LABGRID_ENV: the zephyr_env tag of the place is used
+   ok    LG_COORDINATOR=lab:20408
+   ok    ZEPHYR_EXTRA_MODULES=/home/me/zephyr-labgrid
+   ok    coordinator lab:20408: 12 place(s), 9 with zephyr_platform tag
+   ok    place stm32f746g-disco-1 is acquired by you (myhost/me)
+   ok    tag zephyr_platform=stm32f746g_disco/stm32f746xx
+   ok    tag zephyr_env=stm32f746g_disco/labgrid.yaml
+   ok    environment file /shared/labgrid-envs/stm32f746g_disco/labgrid.yaml from the zephyr_env tag
+   ok    environment file /shared/labgrid-envs/stm32f746g_disco/labgrid.yaml loads
+         drivers: SerialDriver, OpenOCDDriver
+   ok    console driver present
+   ok    flash driver OpenOCDDriver
+   ok    resource NetworkUSBDebugger USBDebugger on localhost: available
+   ok    resource NetworkUSBFlashableDevice USBFlashableDevice on localhost: available
+   ok    resource NetworkSerialPort USBSerialPort on localhost: available
+   ok    openocd on exporter localhost: /usr/bin/openocd
+   ok    console opened in 1.3 s
+   ok    RFC2217 purge answered
+         0 byte(s) of console output in 0.5 s
+   all checks passed, 0 warning(s)
 
 Flash and reset
 ---------------

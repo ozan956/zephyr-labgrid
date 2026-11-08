@@ -10,6 +10,16 @@ This page builds a complete labgrid lab on one Linux machine with one
 board, so you can try the module before you have a real lab. The same
 steps, split over two machines, give you a remote lab.
 
+.. image:: images/one-machine-light.svg
+   :class: only-light
+   :alt: One machine runs the coordinator, the exporter, west and Twister, and
+         the board is plugged into it.
+
+.. image:: images/one-machine-dark.svg
+   :class: only-dark
+   :alt: One machine runs the coordinator, the exporter, west and Twister, and
+         the board is plugged into it.
+
 The example is an STM32F746G-DISCO with its on-board ST-Link. For other
 boards, change the exporter entry and the environment file (see
 :ref:`prepare-a-lab`).
@@ -100,7 +110,8 @@ Take the place, as you would take a board on your desk.
    $ labgrid-client -p stm32f746g-disco acquire
    $ labgrid-twister-check -p stm32f746g-disco
 
-The check prints one line per check. Fix any ``FAIL`` lines first.
+The check prints one line per check, see :ref:`an example <check-output>`.
+Fix any ``FAIL`` lines first.
 
 .. code-block:: console
 
