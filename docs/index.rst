@@ -28,18 +28,17 @@ Where to start
 How the pieces fit together
 ---------------------------
 
-.. code:: text
+.. image:: images/pieces-light.svg
+   :class: only-light
+   :alt: The runner and labgrid-pty on the developer host reach the flash tool
+         and ser2net on the exporter host. Both hosts keep a session with the
+         labgrid coordinator, which holds places, owners and tags.
 
-   developer / CI host                           exporter host
-   -------------------                           -------------
-   west flash / west reset -r labgrid            labgrid-exporter
-     └─▶ labgrid API ──────────────────────────▶ OpenOCD / vendor tool ──▶ probe ──▶ board
-   twister --device-testing                                                          │
-     ├── west flash -r labgrid (as above)                                            │
-     └── labgrid-pty ──▶ labgrid API ──────────▶ ser2net (RFC2217) ◀─── serial port ◀─┘
-                             ▲
-                             │
-                     labgrid-coordinator (places, locks, tags)
+.. image:: images/pieces-dark.svg
+   :class: only-dark
+   :alt: The runner and labgrid-pty on the developer host reach the flash tool
+         and ser2net on the exporter host. Both hosts keep a session with the
+         labgrid coordinator, which holds places, owners and tags.
 
 On the developer side the module adds the ``labgrid`` west runner and the
 ``labgrid-pty`` console bridge. Zephyr and labgrid are used as they are.
