@@ -6,7 +6,7 @@
 # {device.devnode} is the tty on the exporter (USBFlashableDevice matched on
 # SUBSYSTEM tty), {address} is the flash offset the runner reads from the
 # build (the boot partition of the devicetree for Espressif SoCs), {image}
-# the copied zephyr.bin.
+# the copied zephyr.bin. The FlashScriptDriver named reset is for west reset.
 images:
   flash-script: esptool-flash.sh
 targets:
@@ -15,10 +15,14 @@ targets:
       RemotePlace:
         name: !template $LG_PLACE
     drivers:
-      SerialDriver: {}
-      FlashScriptDriver:
-        script: flash-script
-        args:
-          - "{device.devnode}"
-          - "{address}"
-          - "{image}"
+      - SerialDriver: {}
+      - FlashScriptDriver:
+          script: flash-script
+          args:
+            - "{device.devnode}"
+            - "{address}"
+            - "{image}"
+      - FlashScriptDriver:
+          name: reset
+          script: flash-script
+          args: [reset, "{device.devnode}"]

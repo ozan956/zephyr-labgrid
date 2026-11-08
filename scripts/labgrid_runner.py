@@ -338,9 +338,18 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             image = None
             self.logger.info(f'resetting via labgrid place {self.place}')
 
+        self._check_console_port()
         if command == 'flash':
             self._wait_for_console()
         self._run_on_target(command, image)
+
+    def _check_console_port(self):
+        """A board that flashes over its console port can not be flashed or
+        reset while a labgrid-pty has the port open."""
+        coordinator = common.coordinator_for_env(self.env_file)
+        if self.flash_before and common.console_expected(self.place, coordinator):
+            raise RuntimeError(f'place {self.place} flashes over its console port, '
+                               'and a labgrid-pty has the console open. Close it first')
 
     def _wait_for_console(self):
         """Twister starts labgrid-pty and west flash at the same time, and
@@ -349,9 +358,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         for the place is starting. An interactive west flash, without
         one, does not wait."""
         coordinator = common.coordinator_for_env(self.env_file)
-        if self.flash_before and common.console_expected(self.place, coordinator):
-            raise RuntimeError(f'place {self.place} flashes over its console port, '
-                               'and a labgrid-pty has the console open. Close it first')
         timeout = self.wait_console
         if timeout is None:
             grace = TWISTER_GRACE if common.started_by_twister() else 0.0

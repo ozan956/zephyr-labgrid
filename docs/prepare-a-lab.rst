@@ -188,7 +188,8 @@ Examples in the repository
        ``SUBSYSTEM: tty``, and tag the place with
        ``zephyr_flash_before=true`` and ``zephyr_reset_rts=true``. Without
        them the console blocks the flash, or the boot banner is gone before
-       the console opens.
+       the console opens. The script also resets the board for ``west
+       reset``, which needs the console closed.
    * - Alif Ensemble E8 DevKit
      - J-Link Commander through ``jlink.sh``, with a reset script
      - Install the SEGGER J-Link software on the exporter, and leave SW4 in

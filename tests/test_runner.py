@@ -332,6 +332,8 @@ def test_flash_before_place_refuses_an_open_console(runner, lab, monkeypatch, lo
     common.mark_console_starting('p', common.coordinator_for_env('/e.yaml'))
     with pytest.raises(RuntimeError, match='Close it first'):
         runner.do_run('flash')
+    with pytest.raises(RuntimeError, match='Close it first'):
+        runner.do_run('reset')
 
 
 def fake_environment(monkeypatch, target, created=None):
