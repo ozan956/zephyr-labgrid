@@ -39,8 +39,6 @@ from zephyr_labgrid import common  # noqa: E402
 # Under Twister, how long to look for a starting labgrid-pty, and how long
 # to wait for its console to open.
 TWISTER_GRACE = 5.0
-# Name of the FlashScriptDriver that resets the board, see _reset_target.
-RESET_SCRIPT = 'reset'
 AUTO_CONSOLE_WAIT = 30.0
 
 
@@ -141,39 +139,11 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     def _get_flasher(self, target):
         """Return (driver, kind) where kind is 'bootstrap' or 'script'."""
-        from labgrid.driver import FlashScriptDriver
-        from labgrid.driver.common import Driver
-        from labgrid.exceptions import NoDriverFoundError
-
-        if self.driver_name:
-            try:
-                drv = target.get_driver(Driver, name=self.driver_name)
-            except NoDriverFoundError:
-                raise RuntimeError(f'labgrid driver "{self.driver_name}" not found '
-                                   f'in {self.env_file}') from None
-            if isinstance(drv, FlashScriptDriver):
-                return drv, 'script'
-            if hasattr(drv, 'load'):
-                return drv, 'bootstrap'
-            raise RuntimeError(f'labgrid driver "{self.driver_name}" can not flash '
-                               '(needs BootstrapProtocol or FlashScriptDriver)')
-
         try:
-            return target.get_driver('BootstrapProtocol'), 'bootstrap'
-        except NoDriverFoundError:
-            pass
-        # A FlashScriptDriver named "reset" is the reset script, not a flasher.
-        scripts = [d for d in target.drivers
-                   if isinstance(d, FlashScriptDriver) and d.name != RESET_SCRIPT]
-        if len(scripts) == 1:
-            target.activate(scripts[0])
-            return scripts[0], 'script'
-        if scripts:
-            raise RuntimeError(f'{self.env_file} has several FlashScriptDrivers, pick one '
-                               'with --driver')
-        raise RuntimeError('no flash driver (BootstrapProtocol or FlashScriptDriver) '
-                           f'in {self.env_file}; check the drivers section and the '
-                           f'resources of place "{self.place}"')
+            return common.select_flasher(target, self.driver_name)
+        except LookupError as e:
+            raise RuntimeError(f'{e} in {self.env_file}. Check the drivers section and '
+                               f'the resources of place "{self.place}"') from None
 
     def _flash_address(self) -> str:
         """Flash offset of the image as hex string, from the build config.
@@ -239,7 +209,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         # Boards that only a vendor tool can reset (J-Link, esptool): the lab
         # owner adds the command as a FlashScriptDriver named "reset".
         try:
-            drv = target.get_driver(FlashScriptDriver, name=RESET_SCRIPT)
+            drv = target.get_driver(FlashScriptDriver, name=common.RESET_SCRIPT)
         except NoDriverFoundError:
             pass
         else:

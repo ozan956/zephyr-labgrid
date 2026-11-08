@@ -167,6 +167,48 @@ def check_owned(places, place, me=None):
                            f'labgrid-client -p {place} acquire')
 
 
+# Name of the FlashScriptDriver that resets the board instead of flashing it.
+RESET_SCRIPT = 'reset'
+
+
+def select_flasher(target, driver_name=None, activate=True):
+    """The flash driver of a target, as (driver, kind) with kind 'bootstrap'
+    or 'script'.
+
+    ``driver_name`` picks a driver by name. Otherwise the BootstrapProtocol
+    driver, else the one FlashScriptDriver that is not the reset script.
+    Raises LookupError.
+    """
+    from labgrid.driver import FlashScriptDriver
+    from labgrid.driver.common import Driver
+    from labgrid.exceptions import NoDriverFoundError
+
+    if driver_name:
+        try:
+            drv = target.get_driver(Driver, name=driver_name, activate=activate)
+        except NoDriverFoundError:
+            raise LookupError(f'labgrid driver "{driver_name}" not found') from None
+        if isinstance(drv, FlashScriptDriver):
+            return drv, 'script'
+        if hasattr(drv, 'load'):
+            return drv, 'bootstrap'
+        raise LookupError(f'labgrid driver "{driver_name}" can not flash '
+                          '(needs BootstrapProtocol or FlashScriptDriver)')
+    try:
+        return target.get_driver('BootstrapProtocol', activate=activate), 'bootstrap'
+    except NoDriverFoundError:
+        pass
+    scripts = [d for d in target.drivers
+               if isinstance(d, FlashScriptDriver) and d.name != RESET_SCRIPT]
+    if len(scripts) == 1:
+        if activate:
+            target.activate(scripts[0])
+        return scripts[0], 'script'
+    if scripts:
+        raise LookupError('several FlashScriptDrivers, pick one with --driver')
+    raise LookupError('no flash driver (BootstrapProtocol or FlashScriptDriver)')
+
+
 class PlaceLookupError(RuntimeError):
     pass
 

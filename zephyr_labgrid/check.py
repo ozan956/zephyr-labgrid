@@ -237,17 +237,14 @@ def check_env_file(rep, env_file, place):
     except NoDriverFoundError:
         rep.fail('no ConsoleProtocol driver (SerialDriver) in the environment')
 
-    flasher = None
-    for proto in ('BootstrapProtocol', 'FlashScriptDriver'):
-        try:
-            flasher = target.get_driver(proto, activate=False)
-            rep.ok(f'flash driver {type(flasher).__name__}')
-            break
-        except NoDriverFoundError:
-            continue
-    if flasher is None:
-        rep.fail('no flash driver (BootstrapProtocol or FlashScriptDriver) in the '
-                 'environment')
+    # The same rule as the runner: a FlashScriptDriver named "reset" is the
+    # reset script, not the flasher.
+    try:
+        flasher, _ = common.select_flasher(target, activate=False)
+        rep.ok(f'flash driver {type(flasher).__name__}')
+    except LookupError as e:
+        flasher = None
+        rep.fail(f'{e} in the environment')
 
     # image files referenced by FlashScriptDriver
     if flasher is not None and type(flasher).__name__ == 'FlashScriptDriver':

@@ -105,3 +105,61 @@ def place_info():
             tags['zephyr_platform'] = platform
         return {'tags': tags, 'acquired': acquired, 'allowed': list(allowed)}
     return make
+
+
+class FakeScriptDriver:
+    """Same signature as FlashScriptDriver.flash() in labgrid master."""
+
+    def __init__(self, args, name=None):
+        self.args = args
+        self.name = name
+        self.script = None
+        self.device = object()
+        self.calls = []
+
+    def flash(self, script=None, args=None, timeout=None):
+        self.calls.append((args, timeout))
+
+
+class FakeTarget:
+    def __init__(self, drivers):
+        self.by_key = drivers       # protocol/class name -> driver
+        self.drivers = list(drivers.values())   # as labgrid's Target.drivers
+        self.activated = []
+        self.deactivated = []
+        self.cleaned = False
+
+    def get_driver(self, cls, name=None, **kw):
+        from labgrid.exceptions import NoDriverFoundError
+        key = cls if isinstance(cls, str) else cls.__name__
+        if name is not None:
+            for drv in self.drivers:
+                if getattr(drv, 'name', None) == name:
+                    return drv
+            raise NoDriverFoundError(name)
+        if key == 'FlashScriptDriver':
+            # like labgrid: several drivers of a class and no name is an error
+            scripts = [d for d in self.drivers if isinstance(d, FakeScriptDriver)]
+            if len(scripts) > 1:
+                raise NoDriverFoundError('multiple drivers matching FlashScriptDriver')
+            if scripts:
+                return scripts[0]
+        if key in self.by_key:
+            return self.by_key[key]
+        raise NoDriverFoundError(key)
+
+    def activate(self, drv):
+        self.activated.append(drv)
+
+    def deactivate(self, drv):
+        self.deactivated.append(drv)
+
+    def cleanup(self):
+        self.cleaned = True
+
+
+@pytest.fixture(autouse=True)
+def fake_script_driver_class(monkeypatch):
+    """The tools tell script drivers apart with isinstance()."""
+    import labgrid.driver
+    monkeypatch.setattr(labgrid.driver, 'FlashScriptDriver', FakeScriptDriver)

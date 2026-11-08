@@ -470,3 +470,44 @@ def test_started_by_twister(tmp_path):
         for p in procs:
             p.kill()
             p.wait()
+
+
+# -- flasher selection, shared by the runner and the check tool ---------------
+
+def test_select_flasher_skips_the_reset_script():
+    from conftest import FakeScriptDriver, FakeTarget
+    flash = FakeScriptDriver(['{image}'])
+    reset = FakeScriptDriver(['{device.path}'], name='reset')
+    target = FakeTarget({'flash': flash, 'reset': reset})
+    assert common.select_flasher(target, activate=False) == (flash, 'script')
+    assert target.activated == []
+    with pytest.raises(LookupError, match='no flash driver'):
+        common.select_flasher(FakeTarget({'reset': reset}))
+
+
+def test_check_accepts_a_flash_and_a_reset_script(tmp_path, monkeypatch):
+    """Regression: two FlashScriptDrivers made the check report no flash driver."""
+    import io
+
+    import labgrid
+    from conftest import FakeScriptDriver, FakeTarget
+
+    from zephyr_labgrid import check
+    target = FakeTarget({'flash': FakeScriptDriver(['{image}']),
+                         'reset': FakeScriptDriver([], name='reset'),
+                         'ConsoleProtocol': object()})
+
+    class Env:
+        def __init__(self, config_file):
+            pass
+
+        def get_target(self):
+            return target
+    monkeypatch.setattr(labgrid, 'Environment', Env)
+    env = tmp_path / 'e.yaml'
+    env.write_text('targets: {}\n')
+    out = io.StringIO()
+    rep = check.Report(out)
+    check.check_env_file(rep, str(env), 'p')
+    assert 'ok    flash driver FakeScriptDriver' in out.getvalue()
+    assert rep.failed == 0, out.getvalue()
