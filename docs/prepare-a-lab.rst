@@ -6,23 +6,31 @@
 For lab owners
 ==============
 
-You run a labgrid coordinator and exporters. Zephyr users want to flash and
-run Twister on your boards. This page explains what to prepare for them.
+You run a labgrid coordinator and exporters, and Zephyr users want to flash
+and test on your boards. For every board you do six things.
 
-In short, give every Zephyr board a place with a probe resource and
-a serial resource, write one labgrid environment file per board family with
-a flash driver, put the files in a directory your users can read, and tag
-each place with ``zephyr_platform`` and ``zephyr_env``. Users then need only
-the coordinator address, the place name and that directory.
+1. :ref:`Export the probe and the serial port <lab-export>`.
+2. :ref:`Write an environment file <lab-env>` that says how the board is
+   flashed.
+3. :ref:`Create a place and tag it <lab-place>`.
+4. :ref:`Share the environment files <lab-share>` with your users.
+5. :ref:`Check the exporter host <check-exporter-host>`.
+6. :ref:`Test the place yourself <lab-test>`.
 
-To try all of this on one machine first, see :ref:`quickstart`.
+Your users then need the coordinator address and the directory with the
+environment files, nothing else. The last section explains how they
+:ref:`share the boards in Twister runs <lab-twister>`. To try all of this
+on one machine first, see :ref:`quickstart`.
+
+.. _lab-export:
 
 1. Export the probe and the serial port
 ---------------------------------------
 
-Most Zephyr boards have an on-board debug probe (ST-Link, J-Link OB,
-CMSIS-DAP) that also provides the serial console. One USB device gives two
-resources. Match both on the probe serial number so they stay together.
+Most Zephyr boards have an on-board debug probe that also provides the
+serial console, so one USB device gives two resources. Match both on the
+serial number of the probe, so that they stay together. Find it with
+``udevadm info -q property -n /dev/ttyACM0``.
 
 .. code:: yaml
 
@@ -37,15 +45,9 @@ resources. Match both on the probe serial number so they stay together.
          ID_USB_INTERFACE_NUM: '02'
        speed: 115200
 
-``USBDebugger`` knows ST-Link, J-Link, CMSIS-DAP (KitProg3), FTDI and Olimex
-probes. For other probes check ``labgrid/resource/udev.py`` or use a generic
-``USBResource`` with your own match.
-
-Find the values with ``udevadm info -q property -n /dev/ttyACM0``.
-
-If you want to flash with a vendor tool instead of OpenOCD (see step 3),
-also export the probe as a generic ``USBFlashableDevice``. It is the same USB
-device, so use the same match plus the device type.
+``USBDebugger`` knows ST-Link, J-Link, CMSIS-DAP, FTDI and Olimex probes,
+which OpenOCD uses. A flash script instead needs the device as a
+``USBFlashableDevice``, with the same match plus the device type.
 
 .. code:: yaml
 
@@ -55,75 +57,21 @@ device, so use the same match plus the device type.
          SUBSYSTEM: 'usb'
          DEVTYPE: 'usb_device'
 
-If the board has a separate power switch (USB hub port, relay, PDU) add it
-too. Zephyr users benefit from ``--power-cycle`` and from ``labgrid-client power cycle`` when a board hangs.
+Add a power switch of the board (USB hub port, relay, PDU) when you have
+one. Users can then power cycle a board that hangs.
 
-2. Create the place and tag it
-------------------------------
+.. _lab-env:
 
-.. code-block:: console
+2. Write an environment file
+----------------------------
 
-   $ labgrid-client -p stm32f746g-disco-1 create
-   $ labgrid-client -p stm32f746g-disco-1 add-match "exporter1/stm32f746g-disco-1/*"
-   $ labgrid-client -p stm32f746g-disco-1 set-tags \
-       zephyr_platform=stm32f746g_disco/stm32f746xx \
-       zephyr_env=stm32f7/labgrid.yaml
-
-labgrid itself ignores these tags. The zephyr-labgrid tools read them.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 25 50
-
-   * - Tag
-     - Used by
-     - Meaning
-   * - ``zephyr_platform``
-     - runner, ``labgrid-pty``, hwmap
-     - full Zephyr board target, with the SoC qualifier. The runner picks the
-       user's place for a build by it and refuses a build for another
-       board. ``labgrid-pty`` picks the place for a Twister platform by it.
-   * - ``zephyr_env``
-     - runner, ``labgrid-pty``, check, hwmap
-     - environment file of the place, a relative path is resolved against
-       the user's ``ZEPHYR_LABGRID_ENV_DIR``
-   * - ``zephyr_fixtures``
-     - hwmap
-     - comma separated Twister fixtures (loopback wires, sensors)
-   * - ``zephyr_flash_before``
-     - hwmap
-     - ``true`` when the console port is also the flash port (step 3)
-   * - ``zephyr_reset_rts``
-     - ``labgrid-pty``, hwmap
-     - ``true`` when the reset line of the board is wired to RTS, as on ESP32
-       dev kits. ``labgrid-pty`` then resets the board after connecting.
-   * - ``zephyr_flash_timeout``
-     - hwmap
-     - seconds for one flash. Without it Twister's
-       ``--device-flash-timeout`` applies.
-
-With these tags set, the runner and ``labgrid-pty`` find the place and its
-environment file by themselves. Users only need the coordinator address.
-
-Share the environment files
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Put the environment files, and the flash scripts they reference, in one
-directory tree and give users read access, for example as a git repository they clone, an
-NFS share, or a copy in the CI image. Users point ``ZEPHYR_LABGRID_ENV_DIR``
-at it. Relative ``zephyr_env`` tags keep the places independent of where each
-user has the directory.
-
-3. Write a labgrid environment file per board family
-----------------------------------------------------
-
-The environment file tells the runner how to flash and how to reach the
-console. The place name is taken from ``LG_PLACE``, which the runner sets
-from ``--dev-id``, so one file serves all boards of the same family.
+The environment file says how a board is flashed and where its console
+is. Write one per board family. The place name comes from ``LG_PLACE``,
+which the runner sets, so the same file serves every board of the family.
 
 .. code:: yaml
 
-   # labgrid-stm32f7.yaml
+   # stm32f7/labgrid.yaml
    targets:
      main:
        resources:
@@ -141,41 +89,43 @@ from ``--dev-id``, so one file serves all boards of the same family.
              - reset run
              - shutdown
 
-The flash driver is either a driver that implements labgrid's
-``BootstrapProtocol`` or a ``FlashScriptDriver``. Options today.
+Pick the flash driver by how the board is flashed.
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 25 50
+   :widths: 30 25 45
 
-   * - Driver
-     - Tool on the exporter
-     - Notes
-   * - ``OpenOCDDriver``
-     - openocd 0.11 or newer
-     - Works for ST-Link, CMSIS-DAP and J-Link probes that OpenOCD supports.
-       It selects the probe by its USB path, so several probes on one
-       exporter are fine. Tested.
-   * - ``FlashScriptDriver``
-     - anything
-     - Runs your script on the exporter. Use it for pyocd, dfu-util, nrfutil,
-       esptool, STM32CubeProgrammer, J-Link Commander and other vendor tools.
-       Tested with STM32CubeProgrammer, esptool and J-Link Commander.
+   * - The board is flashed
+     - Driver
+     - What to do
+   * - by a probe that OpenOCD supports
+     - ``OpenOCDDriver``
+     - Set ``board_config`` or ``config``, as above. OpenOCD picks the probe
+       by its USB path, so several probes on one exporter are fine.
+   * - by a vendor tool (STM32CubeProgrammer, J-Link Commander, nrfutil,
+       pyocd, dfu-util)
+     - ``FlashScriptDriver``
+     - Write a small script that runs the tool, see below.
+   * - over its console UART (ESP32 dev kits)
+     - ``FlashScriptDriver``
+     - A script as above, plus the tags ``zephyr_flash_before`` and
+       ``zephyr_reset_rts`` on the place, see step 3.
 
-The image file is copied to the exporter by labgrid before the tool runs,
-so the tool only needs to exist on the exporter.
+Keep the ``SerialDriver``, ``labgrid-pty`` uses it for the console.
 
-Vendor tools through FlashScriptDriver
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Flash scripts
+~~~~~~~~~~~~~
 
-``FlashScriptDriver`` copies a script of yours to the exporter and runs it
-there. The runner copies the Zephyr image as well and replaces ``{image}`` in
-``args`` with its path on the exporter. labgrid fills in ``{device.path}``, the
-sysfs USB path of the probe, which the script can turn into a serial number.
+labgrid copies the script and the Zephyr image to the exporter and runs the
+script there, so the tool only needs to exist on the exporter. Put the
+script next to the environment file and name it in ``images``. The runner
+fills in ``{image}``, the path of the image on the exporter, and
+``{address}``, the flash address from the build. labgrid fills in
+``{device.path}``, the USB path of the probe, from which the script reads
+the serial number, and ``{device.devnode}``, the device node.
 
 .. code:: yaml
 
-   # labgrid-stm32cubeprog.yaml
    images:
      flash-script: stm32cubeprog-flash.sh     # relative to this file
    targets:
@@ -187,26 +137,19 @@ sysfs USB path of the probe, which the script can turn into a serial number.
          SerialDriver: {}
          FlashScriptDriver:
            script: flash-script
-           args:
-             - "{device.path}"
-             - "{image}"
+           args: ["{device.path}", "{image}"]
 
-``examples/stm32f746g_disco/stm32cubeprog-flash.sh`` is a complete example.
-It reads the ST-Link serial from ``/sys/bus/usb/devices/<path>/serial``, finds
-``STM32_Programmer_CLI`` and runs it with ``-c port=SWD sn=... -w <image> -v -rst``. Write the same kind of script for nrfutil, esptool or J-Link. Keep
-the script next to the environment file and put the tool on the exporter.
+labgrid runs the script over ssh with a small ``PATH``. Install the tool
+on that ``PATH``, or let the script look for it in the usual places, as the
+example scripts do.
 
-Keep ``SerialDriver`` in the file. ``labgrid-pty`` uses the ConsoleProtocol
-driver it finds, and the runner does not touch it.
+Reset without flashing
+~~~~~~~~~~~~~~~~~~~~~~
 
-If you add a ``PowerProtocol`` or ``ResetProtocol`` driver, ``--reset`` and
-``--power-cycle`` start to work.
-
-When only a vendor tool can reset the board, add the command as a second
-``FlashScriptDriver`` named ``reset``, and ``west reset -r labgrid`` runs it.
-labgrid needs the list form of ``drivers`` for two drivers of the same
-class. ``examples/ensemble_e8_dk/labgrid-hp.yaml`` does this with the reset
-pin of a J-Link.
+``west reset -r labgrid`` uses a ``ResetProtocol`` driver, an OpenOCD driver
+or a power switch. When only a vendor tool can reset the board, add the
+command as a second ``FlashScriptDriver`` named ``reset``. Two drivers of
+the same class need the list form of ``drivers``.
 
 .. code:: yaml
 
@@ -220,114 +163,152 @@ pin of a J-Link.
          script: reset-script
          args: ["{device.path}"]
 
-Boards flashed over the console UART (ESP32 and friends)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Examples in the repository
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-ESP32 dev kits with a USB-UART bridge have no debug probe. esptool flashes
-over the same serial port that is the console, and the bridge's DTR/RTS
-lines drive boot mode and reset. Three things follow.
+``examples/`` has complete environment files and scripts for these boards.
 
--  Export the tty twice, as ``USBSerialPort`` for the console and as
-   ``USBFlashableDevice`` matched on ``SUBSYSTEM: tty``, so the flash script
-   gets the device node as ``{device.devnode}``.
--  The console must be closed while flashing. Tag the place with
-   ``zephyr_flash_before=true``. Twister then flashes first and opens the
-   console afterwards.
--  After the console is opened the board has already booted, so the banner
-   would be lost. Tag the place with ``zephyr_reset_rts=true``.
-   ``labgrid-pty`` then pulses RTS over RFC2217 right after connecting and the
-   board boots again into the open console.
+.. list-table::
+   :header-rows: 1
+   :widths: 22 22 56
 
-The image is a raw ``.bin``, so the script also needs the flash offset. The
-runner fills ``{address}`` from the build, ``CONFIG_FLASH_BASE_ADDRESS`` plus
-``CONFIG_FLASH_LOAD_OFFSET`` where those exist, otherwise the devicetree
-partition Zephyr's own esp32 runner uses. See
-``examples/esp32_devkitc/labgrid-esp32.yaml`` and ``esptool-flash.sh``.
+   * - Board
+     - Flashed with
+     - Good to know
+   * - STM32F746G-DISCO
+     - OpenOCD, or STM32CubeProgrammer through a script
+     - Nothing special. ``labgrid.yaml`` and ``labgrid-stm32cubeprog.yaml``
+       are the two ways.
+   * - ESP32-DevKitC
+     - esptool through a script, over the console UART
+     - Export the tty a second time as ``USBFlashableDevice`` matched on
+       ``SUBSYSTEM: tty``, and tag the place with
+       ``zephyr_flash_before=true`` and ``zephyr_reset_rts=true``. Without
+       them the console blocks the flash, or the boot banner is gone before
+       the console opens.
+   * - Alif Ensemble E8 DevKit
+     - J-Link Commander through ``jlink.sh``, with a reset script
+     - Install the SEGGER J-Link software on the exporter, and leave SW4 in
+       the UART4 position for the console. Once per board, write a table
+       of images that boots the M55 HP core from MRAM, with the Alif
+       Security Toolkit over the SE-UART (SW4 in the SE-UART position).
+       Without it the core does not run and the J-Link can not attach.
+       Copy ``zephyr.bin`` of any build to ``build/images/`` and
+       ``zephyr-hp.json`` to ``build/config/`` of the toolkit, then run
+       ``app-gen-toc -f build/config/zephyr-hp.json`` and
+       ``app-write-mram -c /dev/ttyACM1``.
 
-labgrid runs the script over ssh with a small PATH. Install esptool where
-the script can find it, on ``PATH``, in ``~/.local/bin``, or as a module of the
-system ``python3``.
+.. _lab-place:
 
-Alif Ensemble boards with the on-board J-Link
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Ensemble E8 DevKit shows up on USB as a SEGGER J-Link (``1366:1024``)
-with one serial port. The J-Link writes the image into MRAM over SWD, and
-the serial port carries the console. Four things differ from the boards
-above.
-
--  The M55 cores only run when the Secure Enclave starts them from its
-   table of images (ATOC), and the J-Link can not attach to a core that does
-   not run. Write an ATOC that boots the core from MRAM once per board with
-   the Alif Security Toolkit (SETOOLS) over the SE-UART. Put SW4 in the
-   SE-UART position, copy ``zephyr.bin`` of any build to ``build/images/``
-   and ``examples/ensemble_e8_dk/zephyr-hp.json`` to ``build/config/`` of
-   the SETOOLS directory, then run the two commands below. After that the
-   J-Link writes every new image to the same MRAM address, and the Secure
-   Enclave boots it without checking it, because the entry is unsigned.
-
-   .. code-block:: console
-
-      $ ./app-gen-toc -f build/config/zephyr-hp.json
-      $ ./app-write-mram -c /dev/ttyACM1
-
--  The serial port reaches one UART at a time, set by SW4. Leave SW4 in the
-   UART4 position, the console of the M55 HP core. The boot messages of the
-   Secure Enclave appear on that port too, before the Zephyr banner.
--  Install the SEGGER J-Link software on the exporter. ``jlink.sh``
-   looks for ``JLinkExe`` on ``PATH``, in ``/opt/SEGGER/JLink`` and in
-   ``~/opt/SEGGER-JLink``.
--  A core reset does not start the new image. ``jlink.sh`` pulls the
-   reset pin after writing, so the Secure Enclave restarts and boots it.
-   Its ``reset`` mode, the reset script of the environment, does the same
-   for ``west reset``.
-
-Export the J-Link twice, as ``USBFlashableDevice`` for the flash script and
-as ``USBSerialPort`` for the console, both matched on its serial number.
-
-.. code:: yaml
-
-   ensemble-e8-dk:
-     USBSerialPort:
-       match:
-         ID_SERIAL_SHORT: '001219407405'
-         ID_USB_INTERFACE_NUM: '00'
-       speed: 115200
-     USBFlashableDevice:
-       match:
-         ID_SERIAL_SHORT: '001219407405'
-         SUBSYSTEM: 'usb'
-         DEVTYPE: 'usb_device'
-
-Tag the place with ``zephyr_platform=ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp``
-and ``zephyr_env=ensemble_e8_dk/labgrid-hp.yaml``. The environment file
-passes the J-Link device name of the core to the flash script.
-
-4. Hand out hardware map entries
---------------------------------
-
-Each place needs one entry. ``labgrid-twister-hwmap`` writes them from the
-tags of step 2.
+3. Create a place and tag it
+----------------------------
 
 .. code-block:: console
 
-   $ labgrid-twister-hwmap -x lab-coordinator:20408 --env-dir /shared/labgrid-envs -o hwmap.yaml
+   $ labgrid-client -p stm32f746g-disco-1 create
+   $ labgrid-client -p stm32f746g-disco-1 add-match "exporter1/stm32f746g-disco-1/*"
+   $ labgrid-client -p stm32f746g-disco-1 set-tags \
+       zephyr_platform=stm32f746g_disco/stm32f746xx \
+       zephyr_env=stm32f7/labgrid.yaml
 
-It reads the tags from the table in step 2 and skips places without
-``zephyr_platform``. It finds the environment files as the runner does, so
-``--env FILE`` sets one file for every place, and ``-p PLATFORM`` or
-``--place NAME`` limit the map to some places. ``--env-dir`` defaults to
-``$ZEPHYR_LABGRID_ENV_DIR``.
+labgrid ignores these tags, the zephyr-labgrid tools read them. The first
+two are needed, the others when the board needs them.
 
-Every entry makes a test take its place when it starts and give it back
-when it ends, so users run Twister with the map without holding the places.
-A place the user holds already stays theirs. When someone else holds a
-place, the test waits for it up to ``--wait SECONDS`` (default 300), and
-``flash_timeout`` grows by that time. Places in use when the map is written
-stay in it with a note. For a single board that the user holds, no map is
-needed, see :ref:`flash-and-test`.
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
 
-The result looks like this.
+   * - Tag
+     - Meaning
+   * - ``zephyr_platform``
+     - Zephyr board target with the SoC qualifier. The runner picks the
+       place of a user by it and refuses a build for another board.
+   * - ``zephyr_env``
+     - environment file of the place, relative to the directory you share
+       in step 4
+   * - ``zephyr_flash_before``
+     - ``true`` when the console port is also the flash port, so that
+       Twister flashes before it opens the console
+   * - ``zephyr_reset_rts``
+     - ``true`` when the reset line is wired to RTS, so that
+       ``labgrid-pty`` resets the board after connecting
+   * - ``zephyr_fixtures``
+     - comma separated Twister fixtures (loopback wires, sensors)
+   * - ``zephyr_flash_timeout``
+     - seconds for one flash, when Twister's default is too short
+
+.. _lab-share:
+
+4. Share the environment files
+------------------------------
+
+Put the environment files and their scripts in one directory tree and let
+your users read it, as a git repository they clone, an NFS share or a copy
+in the CI image. Users point ``ZEPHYR_LABGRID_ENV_DIR`` at it, and the
+relative ``zephyr_env`` tags then work wherever each user has the copy.
+
+.. _check-exporter-host:
+
+5. Check the exporter host
+--------------------------
+
+-  ser2net 4.6.1 or newer. ser2net 4.6.0 (Ubuntu 24.04) never answers the
+   RFC2217 purge request. ``labgrid-pty`` notices it and continues without
+   purge, at the cost of one second per console. See labgrid issue #1396.
+-  openocd 0.11 or newer, so that USB path selection works with several
+   probes on one host.
+-  udev rules that give the exporter user access to the probes, the
+   ``plugdev`` group or the rules of the vendor.
+-  No ModemManager probing of the serial ports, it sends AT commands into the
+   board console. Disable it, or blacklist the vendor and product ID of the
+   probe.
+
+.. _lab-test:
+
+6. Test the place yourself
+--------------------------
+
+Before you hand the place out, go through the loop of a user once.
+
+.. code-block:: console
+
+   $ export LG_COORDINATOR=lab:20408 ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
+   $ labgrid-client -p stm32f746g-disco-1 acquire
+   $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd
+   $ west build -b stm32f746g_disco samples/hello_world
+   $ west flash -r labgrid
+   $ labgrid-pty &
+   $ west reset -r labgrid
+   $ kill %1
+   $ labgrid-client -p stm32f746g-disco-1 release
+
+The check should print no ``FAIL``, and the console should show
+``Hello World!`` after the reset. Then run ``samples/hello_world`` and
+``samples/subsys/testsuite/pytest/shell`` with Twister. The second one
+checks that typing into the console works too.
+
+.. _lab-twister:
+
+Sharing the boards in Twister runs
+----------------------------------
+
+A labgrid place belongs to one user at a time. There are three ways to
+share the boards, pick one per group of places.
+
+1. **Users hold places for their own work.** A developer acquires a place,
+   uses it with ``west`` and Twister, and releases it. Good for interactive
+   work.
+2. **Twister takes places per test.** Write a hardware map once with
+   ``labgrid-twister-hwmap -o map.yml``. Each test takes its place when it
+   starts and gives it back when it ends, and waits up to 300 seconds when
+   someone else has it (``--wait SECONDS``). Good for shared boards and CI.
+3. **A CI account holds the places.** It acquires all places once and runs
+   Twister with a map. The tests never release a place that was held
+   before, so the places stay with the account. Good for a test farm.
+
+The map tool reads the tags of step 3, finds the environment files as the
+runner does, and ``-p PLATFORM`` or ``--place NAME`` limit it to some places.
+Write the map again when the lab gets new boards. One entry looks like this.
 
 .. code:: yaml
 
@@ -344,81 +325,10 @@ The result looks like this.
      serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-envs/stm32f7/labgrid.yaml,--acquire,--acquire-wait=300"
      flash_timeout: 360
 
-``--acquire`` and ``--acquire-wait`` are not in the help of the runner and of
-``labgrid-pty``. They are meant for generated maps, users never type them.
+``--acquire`` and ``--acquire-wait`` are meant for generated maps, users never
+type them. ``flash_timeout`` includes the wait for a busy place.
 
-Things to keep in mind about the entries.
-
--  ``id`` must be set. Twister ignores ``runner_params`` when it is empty.
--  ``flash_timeout`` counts the whole ``west flash`` call, including the
-   wait for a busy place and the file copy to the exporter.
--  ``fixtures`` describe extra hardware (loopback wires, sensors). They map
-   well to labgrid tags, so add them when you generate the map.
-
-5. Decide who owns the lock
----------------------------
-
-labgrid and Twister both have locks and do not know about each other.
-
--  Twister locks a DUT inside one Twister run. It protects against its own
-   parallel workers only.
--  labgrid locks a place for one user across the whole lab.
-
-Three ways to share the boards.
-
-1. **Users hold places for their own work.** A developer takes a place with
-   ``labgrid-client acquire``, works with ``west flash -r labgrid`` and
-   Twister on it, and releases it afterwards. Good for interactive use.
-2. **Hardware maps take places per test.** Twister runs with a map from
-   ``labgrid-twister-hwmap``, each test takes its place and gives it back.
-   The tools on one host coordinate through a small lock directory
-   (``$TMPDIR/zephyr-labgrid-<uid>/``), so the flash does not release the
-   place while the console is still open. Between two tests the place is
-   free for a moment, so another user can take it, and the next test then
-   waits for it. Good for shared boards and for CI.
-3. **A CI account holds the places.** It acquires all Zephyr places once,
-   and Twister runs under that account with a map. The tests keep the
-   places, because they never release a place that was held before. Other
-   users see the places as busy. Good for a dedicated test farm.
-
-labgrid knows a place owner only as host and user. Two Twister runs of the
-same user on the same host therefore share a board instead of waiting for
-each other. CI executors that share a host and a user should each set their
+labgrid knows the owner of a place only as host and user, so two Twister
+runs of the same user on the same host share a board instead of waiting
+for each other. CI executors on one host and user should each set their
 own ``LG_USERNAME``.
-
-.. _check-exporter-host:
-
-6. Check the exporter host
---------------------------
-
--  ser2net 4.6.1 or newer. ser2net 4.6.0 (Ubuntu 24.04) never answers the
-   RFC2217 purge request, and plain pyserial times out on open. ``labgrid-pty``
-   detects this and continues without purge, at the cost of one second
-   per console. See labgrid issue #1396.
--  openocd 0.11 or newer so that USB path selection works with several
-   probes on one host.
--  udev rules that give the exporter user access to the probes
-   (``plugdev`` group or the vendor rules).
--  Disable ModemManager probing of the USB serial ports, or blacklist the
-   probe vendor and product ID. It sends AT commands into the board console.
-
-7. Test the place yourself
---------------------------
-
-Before handing a place to users, do the full loop once.
-
-.. code-block:: console
-
-   $ export LG_COORDINATOR=... ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
-   $ labgrid-client -p stm32f746g-disco-1 acquire
-   $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd   # every line ok
-   $ west build -b stm32f746g_disco samples/hello_world
-   $ west flash -r labgrid
-   $ labgrid-pty &                    # console
-   $ west reset -r labgrid            # expect "Hello World!"
-   $ kill %1
-   $ labgrid-client -p stm32f746g-disco-1 release
-
-Then run one Twister suite, with or without the hardware map entry. ``samples/hello_world``
-checks the console path, ``samples/subsys/testsuite/pytest/shell`` checks that
-writing into the console works too.
