@@ -347,3 +347,43 @@ If something goes wrong
 -  ``cannot import name 'Environment' from 'labgrid'``. The current
    directory contains a ``labgrid`` folder (a labgrid clone). Run from
    another directory.
+
+.. _supported:
+
+What is supported
+-----------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Feature
+     - Status
+   * - ``west flash``, with ``--file``, ``--dry-run`` and sysbuild
+     - yes. OpenOCD gets the ``.hex`` or ``.elf``, never a raw ``.bin``.
+       Sysbuild is unit tested, not yet tried on a board.
+   * - ``west reset``
+     - yes, through ResetProtocol, a reset script, PowerProtocol or OpenOCD
+   * - ``west debug``, ``debugserver``, ``attach``, ``rtt``
+     - not yet, it needs a GDB server in labgrid
+   * - ``west flash --erase``
+     - no
+   * - Flash drivers
+     - ``OpenOCDDriver``, other ``BootstrapProtocol`` drivers, and any tool
+       through ``FlashScriptDriver`` (pyocd, dfu-util, nrfutil, esptool,
+       J-Link)
+   * - Interactive console
+     - ``labgrid-pty`` in a terminal, or ``labgrid-client console``
+   * - Twister console, ztest, gtest, pytest and shell harnesses
+     - yes
+   * - Twister with or without a hardware map, parallel boards, fixtures,
+       ``--flash-before``, ``--retry-failed``
+     - yes
+   * - Waiting for a busy place
+     - yes, with hardware maps, 300 s by default
+   * - pytest ``mcumgr`` fixture, tools that open a serial device
+     - no, the console is a pty bridge
+   * - Several console UARTs per place, Twister ``required_devices``
+     - no, one console per place
+   * - Host operating system
+     - Linux
