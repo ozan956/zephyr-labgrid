@@ -260,12 +260,14 @@ Watch the console
 ``labgrid-pty`` opens the console of the one place you hold. Pass ``-p
 PLACE`` when you hold several. For boards whose reset line is wired to RTS
 (ESP32 dev kits) the lab owner tags the place, and ``labgrid-pty`` then
-resets the board after connecting so that you see the boot banner. Stop it
-with Ctrl-C. ``labgrid-client -p PLACE console`` works too and needs
-``microcom`` or ``telnet``.
+resets the board after connecting so that you see the boot banner.
 
-``labgrid-pty`` exits when its input closes. Run it in a terminal, or keep
-the input open (``sleep 60 | labgrid-pty``).
+In a terminal it works like picocom. Every key goes to the board, Tab,
+the arrow keys and Ctrl-C too, and Ctrl-] exits. ``-l FILE`` also writes
+the output to a file. Started by Twister, in the background or with a
+pipe as input, it passes the bytes through unchanged and exits when its
+input closes (``sleep 60 | labgrid-pty``). ``labgrid-client -p PLACE
+console`` works too and needs ``microcom`` or ``telnet``.
 
 Run Twister on your board
 -------------------------

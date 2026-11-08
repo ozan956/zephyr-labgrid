@@ -123,7 +123,7 @@ Watch the console in a second terminal and reset the board.
 
 .. code-block:: console
 
-   $ labgrid-pty                       # Ctrl-C to stop
+   $ labgrid-pty                       # Ctrl-] to stop
    $ west reset -r labgrid
 
 You should see ``Hello World! stm32f746g_disco/stm32f746xx``.

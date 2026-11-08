@@ -21,6 +21,25 @@ def test_reset_rts_pulses_rts_with_dtr_low(monkeypatch):
     assert ser.events == [('dtr', False), ('rts', True), ('rts', False)]
 
 
+def test_interactive_only_for_a_person_at_a_terminal(monkeypatch):
+    import os
+    from zephyr_labgrid import common
+    r, w = os.pipe()
+    assert not pty.interactive(r)           # a pipe, as from sleep 60 | labgrid-pty
+    os.close(r)
+    os.close(w)
+    monkeypatch.setattr(pty.os, 'isatty', lambda fd: True)
+    monkeypatch.setattr(pty.os, 'tcgetpgrp', lambda fd: 7)
+    monkeypatch.setattr(pty.os, 'getpgrp', lambda: 7)
+    monkeypatch.setattr(common, 'twister_words', lambda: None)
+    assert pty.interactive(0)
+    monkeypatch.setattr(pty.os, 'getpgrp', lambda: 8)
+    assert not pty.interactive(0)           # a background job
+    monkeypatch.setattr(pty.os, 'getpgrp', lambda: 7)
+    monkeypatch.setattr(common, 'twister_words', lambda: [b'twister'])
+    assert not pty.interactive(0)           # Twister passes a pty
+
+
 def test_place_and_env_from_the_coordinator(clean_env, monkeypatch, place_info, tmp_path):
     from zephyr_labgrid import common
     places = {'p': place_info('b/q', acquired='h/u', zephyr_env='e.yaml'),

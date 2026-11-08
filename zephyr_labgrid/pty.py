@@ -4,7 +4,8 @@
 Intended as Twister's ``serial_pty`` script (and the pytest-twister-harness
 ``--device-serial-pty``): Twister starts this with a pty on its stdio and
 talks to it as if it were a serial port. We forward everything to the
-console driver of the labgrid target.
+console driver of the labgrid target. In a terminal it is interactive,
+every key goes to the board and Ctrl-] exits.
 
 The place must be acquired by you.
 
@@ -41,6 +42,33 @@ def reset_rts(ser, pulse=0.1):
     ser.rts = True
     time.sleep(pulse)
     ser.rts = False
+
+
+EXIT_KEY = b'\x1d'     # Ctrl-], as in telnet
+
+
+def interactive(fd):
+    """True when a person types into labgrid-pty: ``fd`` is the terminal
+    of a foreground job, not the pty of Twister or a background job."""
+    try:
+        return (os.isatty(fd) and os.tcgetpgrp(fd) == os.getpgrp()
+                and common.twister_words() is None)
+    except OSError:
+        return False
+
+
+def raw_terminal(fd):
+    """Pass every key to the board, Ctrl-C and Tab too, but keep the
+    output translation so that lines start at the left. Returns the old
+    settings."""
+    import termios
+    import tty
+    saved = termios.tcgetattr(fd)
+    tty.setraw(fd)
+    mode = termios.tcgetattr(fd)
+    mode[1] |= termios.OPOST | termios.ONLCR
+    termios.tcsetattr(fd, termios.TCSANOW, mode)
+    return saved
 
 
 def build_parser():
@@ -246,6 +274,10 @@ def main(argv=None):
 
     stdin_fd = sys.stdin.fileno()
     write_warned = False
+    saved_terminal = None
+    if interactive(stdin_fd):
+        saved_terminal = raw_terminal(stdin_fd)
+        warn(f'console of place {args.place}, exit with Ctrl-]')
     try:
         while not stop.is_set():
             r, _, _ = select.select([stdin_fd], [], [], 0.2)
@@ -254,6 +286,11 @@ def main(argv=None):
                     data = os.read(stdin_fd, 4096)
                 except OSError:
                     break
+                if not data:
+                    break
+                if saved_terminal is not None and EXIT_KEY in data:
+                    data = data[:data.index(EXIT_KEY)]
+                    stop.set()
                 if not data:
                     break
                 try:
@@ -267,6 +304,11 @@ def main(argv=None):
                         traceback.print_exc(file=sys.stderr)
     finally:
         stop.set()
+        if saved_terminal is not None:
+            import termios
+            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, saved_terminal)
+            out.write(b'\n')
+            out.flush()
         common.clear_console_ready(ready)
         # Release first: Twister kills this process 0.5 s after SIGTERM.
         # The release runs in a child that survives that (PlaceLock).

@@ -281,7 +281,7 @@ Before you hand the place out, go through the loop of a user once.
    $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd
    $ west build -b stm32f746g_disco samples/hello_world
    $ west flash -r labgrid
-   $ labgrid-pty &
+   $ sleep 30 | labgrid-pty &
    $ west reset -r labgrid
    $ kill %1
    $ labgrid-client -p stm32f746g-disco-1 release

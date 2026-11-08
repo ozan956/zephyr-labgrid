@@ -433,7 +433,7 @@ def console_expected(place, coordinator=None, grace=0.0, poll=0.2):
         time.sleep(poll)
 
 
-def _twister_words(pid=None):
+def twister_words(pid=None):
     """Command line of the parent process when it is Twister, else None.
     Twister passes nothing to its tools that says how it runs them, its
     command line (Linux /proc) does."""
@@ -452,7 +452,7 @@ def started_by_twister(pid=None):
     --flash-before opens the console after flashing, so there is nothing to
     wait for then.
     """
-    words = _twister_words(pid)
+    words = twister_words(pid)
     return words is not None and b'--flash-before' not in words
 
 
@@ -461,7 +461,7 @@ def twister_flashes_after_console(pid=None):
     without --flash-before, so that it flashes while the console is open.
     A generated hardware map sets flash_before for the places that need it.
     """
-    words = _twister_words(pid)
+    words = twister_words(pid)
     return (words is not None and b'--flash-before' not in words
             and not any(w.startswith(b'--hardware-map') for w in words))
 
