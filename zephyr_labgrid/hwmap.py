@@ -88,12 +88,10 @@ def env_file(name, tags, args):
 
 
 def make_entry(name, place, args):
-    """Build the hardware map entry for one place (an entry of
-    common.lab_places), or None when the place has no zephyr_platform tag."""
+    """Build the hardware map entry for one place with a zephyr_platform
+    tag (an entry of common.lab_places)."""
     tags = place['tags']
-    platform = tags.get('zephyr_platform')
-    if not platform:
-        return None
+    platform = tags['zephyr_platform']
     env = env_file(name, tags, args)
     if not os.path.isfile(env):
         print(f'warning: environment file {env} for place {name} does not exist',

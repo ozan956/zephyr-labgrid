@@ -65,10 +65,6 @@ def test_wait_console_can_be_set(env_file, place_info):
     assert entry['runner_params'][-1] == '--wait-console=20'
 
 
-def test_place_without_platform_gives_no_entry(place_info):
-    assert hwmap.make_entry('p', place_info(), parse([])) is None
-
-
 def test_env_overrides_tag(tmp_path, place_info):
     forced = tmp_path / 'forced.yaml'
     forced.write_text('')

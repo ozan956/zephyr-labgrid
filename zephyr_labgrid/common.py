@@ -47,6 +47,19 @@ def close_session(session):
         pass
 
 
+def python_child(module, func, *args):
+    """Command that runs zephyr_labgrid.<module>.<func>(args) in a child.
+
+    sys.path[0], the current directory for python -c, becomes the directory
+    of this package: a labgrid clone in the current directory would hide
+    the installed labgrid package.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    code = ('import sys; sys.path[0] = sys.argv.pop(1); '
+            f'from zephyr_labgrid.{module} import {func}; sys.exit({func}(sys.argv[1:]))')
+    return [sys.executable, '-c', code, root, *args]
+
+
 _LAB_PLACES = {}
 
 
@@ -65,28 +78,13 @@ def lab_places(coordinator=None):
         return _LAB_PLACES[coordinator]
     env = dict(os.environ)
     env.pop('LG_ENV', None)
-    # Replace sys.path[0] (the current directory with -c/-m) by the
-    # directory of this package: a ./labgrid checkout in the current
-    # directory would otherwise hide the installed labgrid package.
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    code = ('import sys; sys.path[0] = sys.argv.pop(1); '
-            'from zephyr_labgrid.placeinfo import main; sys.exit(main())')
-    proc = subprocess.run([sys.executable, '-c', code, root, '-x', coordinator],
+    proc = subprocess.run(python_child('placeinfo', 'main', '-x', coordinator),
                           env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc.returncode != 0:
         raise PlaceLookupError(proc.stderr.strip() or
                                f'could not read the places of {coordinator}')
     _LAB_PLACES[coordinator] = json.loads(proc.stdout)
     return _LAB_PLACES[coordinator]
-
-
-def place_tags(place, coordinator=None):
-    """Tags of one place. Raises PlaceLookupError."""
-    places = lab_places(coordinator)
-    if place not in places:
-        raise PlaceLookupError(f'place {place} does not exist on '
-                               f'{coordinator or default_coordinator()}')
-    return places[place]['tags']
 
 
 TRUE_WORDS = ('1', 'true', 'yes', 'on')
@@ -228,26 +226,18 @@ class PlaceLookupError(RuntimeError):
     pass
 
 
-def resolve_env(env_file, place, env_dir=None, coordinator=None, tags=None):
+def resolve_env(env_file, place, env_dir=None, tags=None):
     """Find the labgrid environment file for a place.
 
     Order: ``env_file`` (the --env option), $ZEPHYR_LABGRID_ENV, $LG_ENV,
-    then the ``zephyr_env`` tag of the place. A relative tag is resolved
-    against ``env_dir`` (--env-dir, else $ZEPHYR_LABGRID_ENV_DIR). ``tags``
-    skips the coordinator lookup (tests, callers that already have them).
-    Returns the path; raises ValueError with a hint when nothing fits.
+    then the ``zephyr_env`` tag in ``tags``, the tags of the place. A relative
+    tag is resolved against ``env_dir`` (--env-dir, else
+    $ZEPHYR_LABGRID_ENV_DIR). Returns the path, raises ValueError with a hint
+    when nothing fits.
     """
     env_file = env_file or default_env()
     if env_file:
         return env_file
-    if not place:
-        raise ValueError('need a place to look up its zephyr_env tag')
-    if tags is None:
-        try:
-            tags = place_tags(place, coordinator)
-        except PlaceLookupError as e:
-            raise ValueError(f'no --env given and the zephyr_env tag of place '
-                             f'{place} could not be read: {e}') from None
     tag = (tags or {}).get('zephyr_env')
     if not tag:
         raise ValueError(f'no --env given, $ZEPHYR_LABGRID_ENV is not set and place '
@@ -722,11 +712,8 @@ class PlaceLock:
         children to kill before the SIGTERM. A child started after that
         survives the SIGKILL of this process and finishes the release.
         """
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        code = ('import sys; sys.path[0] = sys.argv.pop(1); '
-                'from zephyr_labgrid.common import _release_main; '
-                'sys.exit(_release_main(sys.argv[1:]))')
-        proc = subprocess.Popen([sys.executable, '-c', code, root, self.place, self.coordinator],
+        proc = subprocess.Popen(python_child('common', '_release_main', self.place,
+                                             self.coordinator),
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, start_new_session=True)
         out, _ = proc.communicate()

@@ -327,14 +327,6 @@ def test_resolve_env_from_tag(clean_env, monkeypatch):
         common.resolve_env(None, 'p', tags={})
 
 
-def test_resolve_env_reports_lookup_failure(clean_env, monkeypatch):
-    def fail(place, coordinator=None):
-        raise common.PlaceLookupError('place p does not exist')
-    monkeypatch.setattr(common, 'place_tags', fail)
-    with pytest.raises(ValueError, match='does not exist'):
-        common.resolve_env(None, 'p')
-
-
 def test_placeinfo_prints_places(monkeypatch, capsys, fake_place):
     import json
 
