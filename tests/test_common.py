@@ -412,6 +412,19 @@ def test_console_starting_marker(lock_dir):
     assert not common.console_expected('p', 'c:1')
 
 
+def test_twister_with_a_map_does_not_flash_after_the_console():
+    import subprocess
+    import sys
+    p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)',
+                          'scripts/twister', '--hardware-map', 'map.yml'])
+    try:
+        assert common.started_by_twister(p.pid)
+        assert not common.twister_flashes_after_console(p.pid)
+    finally:
+        p.kill()
+        p.wait()
+
+
 def test_started_by_twister(tmp_path):
     import subprocess
     import sys
@@ -422,6 +435,8 @@ def test_started_by_twister(tmp_path):
                            ['west', 'build'])]
     try:
         assert [common.started_by_twister(p.pid) for p in procs] == [True, False, False]
+        assert [common.twister_flashes_after_console(p.pid) for p in procs] == [
+            True, False, False]
     finally:
         for p in procs:
             p.kill()

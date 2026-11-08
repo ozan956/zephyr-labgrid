@@ -431,23 +431,37 @@ def console_expected(place, coordinator=None, grace=0.0, poll=0.2):
         time.sleep(poll)
 
 
-def started_by_twister(pid=None):
-    """True when the parent process is a Twister run that opens the console
-    before flashing, so that a labgrid-pty is about to start.
-
-    Twister passes nothing to west flash that says so; its command line
-    (Linux /proc) does. Twister's --flash-before opens the console after
-    flashing, so there is nothing to wait for then.
-    """
+def _twister_words(pid=None):
+    """Command line of the parent process when it is Twister, else None.
+    Twister passes nothing to its tools that says how it runs them, its
+    command line (Linux /proc) does."""
     pid = pid or os.getppid()
     try:
         with open(f'/proc/{pid}/cmdline', 'rb') as f:
             words = f.read().split(b'\0')
     except OSError:
-        return False
-    if b'--flash-before' in words:
-        return False
-    return any(b'twister' in w for w in words)
+        return None
+    return words if any(b'twister' in w for w in words) else None
+
+
+def started_by_twister(pid=None):
+    """True when the parent process is a Twister run that opens the console
+    before flashing, so that a labgrid-pty is about to start. Twister's
+    --flash-before opens the console after flashing, so there is nothing to
+    wait for then.
+    """
+    words = _twister_words(pid)
+    return words is not None and b'--flash-before' not in words
+
+
+def twister_flashes_after_console(pid=None):
+    """True when the parent is a Twister run without a hardware map and
+    without --flash-before, so that it flashes while the console is open.
+    A generated hardware map sets flash_before for the places that need it.
+    """
+    words = _twister_words(pid)
+    return (words is not None and b'--flash-before' not in words
+            and not any(w.startswith(b'--hardware-map') for w in words))
 
 
 def wait_console_ready(place, coordinator=None, timeout=30.0, poll=0.2):

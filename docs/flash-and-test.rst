@@ -285,7 +285,11 @@ and the flash waits until the console is open, so no boot output is lost.
 
 For a board whose console port is also its flash port (ESP32 with a
 USB-UART bridge), add ``--flash-before``, so that Twister flashes before it
-opens the console.
+opens the console. Without it ``labgrid-pty`` refuses to open the console
+of such a place, and the test fails. Otherwise the flash would fail on the
+open port while the old firmware could still pass the test. A ``west
+flash`` on such a place stops the same way while a ``labgrid-pty`` has its
+console open.
 
 .. code-block:: console
 

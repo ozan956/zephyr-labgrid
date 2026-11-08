@@ -87,6 +87,13 @@ def resolve_place(args):
     if not args.acquire:
         common.check_owned(places, args.place)
     tags = places[args.place]['tags']
+    # The flash would fail on the open console, and the old firmware could
+    # still give the test the output it expects.
+    if (common.tag_is_true(tags.get('zephyr_flash_before'))
+            and common.twister_flashes_after_console()):
+        raise common.PlaceSelectError(
+            f'place {args.place} flashes over its console port. Run Twister with '
+            '--flash-before, or with a map from labgrid-twister-hwmap')
     args.env = common.resolve_env(args.env, args.place, env_dir=args.env_dir, tags=tags)
     # The lab owner tags boards whose reset line is wired to RTS; the user
     # should not have to know that.

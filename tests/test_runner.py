@@ -324,6 +324,16 @@ def test_wait_console_by_default_only_for_a_starting_pty(runner_mod, runner, mon
     assert waited == [runner_mod.AUTO_CONSOLE_WAIT]
 
 
+def test_flash_before_place_refuses_an_open_console(runner, lab, monkeypatch, lock_dir):
+    from zephyr_labgrid import common
+    lab['p']['tags']['zephyr_flash_before'] = 'true'
+    monkeypatch.setattr(runner, '_run_on_target', lambda *a: None)
+    runner.do_run('flash')                  # no console open: flashes
+    common.mark_console_starting('p', common.coordinator_for_env('/e.yaml'))
+    with pytest.raises(RuntimeError, match='Close it first'):
+        runner.do_run('flash')
+
+
 def fake_environment(monkeypatch, target, created=None):
     class FakeEnvironment:
         def __init__(self, config_file):

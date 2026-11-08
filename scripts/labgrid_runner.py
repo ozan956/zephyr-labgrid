@@ -59,6 +59,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.acquire_wait = acquire_wait
         self.ignore_platform = ignore_platform
         self.wait_console = wait_console
+        self.flash_before = False   # from the place tags, when they are read
 
     @classmethod
     def name(cls):
@@ -270,6 +271,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             raise RuntimeError(str(e)) from None
 
         tags = places[self.place]['tags']
+        self.flash_before = common.tag_is_true(tags.get('zephyr_flash_before'))
         tag = tags.get('zephyr_platform')
         if (tag and target and not self.ignore_platform
                 and not common.platform_matches(tag, target, board)):
@@ -347,6 +349,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         for the place is starting. An interactive west flash, without
         one, does not wait."""
         coordinator = common.coordinator_for_env(self.env_file)
+        if self.flash_before and common.console_expected(self.place, coordinator):
+            raise RuntimeError(f'place {self.place} flashes over its console port, '
+                               'and a labgrid-pty has the console open. Close it first')
         timeout = self.wait_console
         if timeout is None:
             grace = TWISTER_GRACE if common.started_by_twister() else 0.0
