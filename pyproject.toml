@@ -17,6 +17,10 @@ dependencies = [
     "PyYAML",
 ]
 
+[project.urls]
+Documentation = "https://ozandurgut.com/zephyr-labgrid/"
+Source = "https://github.com/ozan956/zephyr-labgrid"
+
 [project.optional-dependencies]
 test = ["pytest"]
 

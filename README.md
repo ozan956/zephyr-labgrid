@@ -1,7 +1,7 @@
 # zephyr-labgrid
 
 [![CI](https://github.com/ozan956/zephyr-labgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/ozan956/zephyr-labgrid/actions/workflows/ci.yml)
-[![Docs](https://github.com/ozan956/zephyr-labgrid/actions/workflows/docs.yml/badge.svg)](https://ozan956.github.io/zephyr-labgrid/)
+[![Docs](https://github.com/ozan956/zephyr-labgrid/actions/workflows/docs.yml/badge.svg)](https://ozandurgut.com/zephyr-labgrid/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Flash, reset and test Zephyr on boards in a [labgrid](https://github.com/labgrid-project/labgrid)
@@ -50,17 +50,17 @@ export ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
 labgrid-twister-check -p stm32f746g-disco
 ```
 
-Without a lab, [One board on your desk](https://ozan956.github.io/zephyr-labgrid/quickstart/)
+Without a lab, [One board on your desk](https://ozandurgut.com/zephyr-labgrid/quickstart/)
 sets up a complete lab on one machine.
 
 ## Documentation
 
-The documentation is at https://ozan956.github.io/zephyr-labgrid/.
+The documentation is at https://ozandurgut.com/zephyr-labgrid/.
 
-- [For Zephyr developers](https://ozan956.github.io/zephyr-labgrid/flash-and-test/), your routine next to a board on your desk
-- [For lab owners](https://ozan956.github.io/zephyr-labgrid/prepare-a-lab/), places, environment files and tags
-- [Best practices](https://ozan956.github.io/zephyr-labgrid/best-practices/)
-- [Design notes](https://ozan956.github.io/zephyr-labgrid/design/), for contributors
+- [For Zephyr developers](https://ozandurgut.com/zephyr-labgrid/flash-and-test/), your routine next to a board on your desk
+- [For lab owners](https://ozandurgut.com/zephyr-labgrid/prepare-a-lab/), places, environment files and tags
+- [Best practices](https://ozandurgut.com/zephyr-labgrid/best-practices/)
+- [Design notes](https://ozandurgut.com/zephyr-labgrid/design/), for contributors
 
 ## Status
 
@@ -68,7 +68,7 @@ This is an experimental release (0.1). It needs Zephyr 4.4 or newer,
 Python 3.11 or newer, labgrid master and a Linux host. It is tested with
 Zephyr 4.5 on an STM32F746G-DISCO, an ESP32-DevKitC and an Alif Ensemble
 E8 DevKit. `west debug` and several consoles per board are not supported
-yet, see [What is supported](https://ozan956.github.io/zephyr-labgrid/flash-and-test/#supported).
+yet, see [What is supported](https://ozandurgut.com/zephyr-labgrid/flash-and-test/#supported).
 
 ## Contributing
 
