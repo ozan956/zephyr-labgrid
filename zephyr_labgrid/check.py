@@ -140,7 +140,8 @@ def check_env_vars(rep, args):
     if os.environ.get('LG_COORDINATOR'):
         rep.ok(f'LG_COORDINATOR={os.environ["LG_COORDINATOR"]}')
     else:
-        rep.warn(f'LG_COORDINATOR not set, using {common.DEFAULT_COORDINATOR}')
+        rep.info('LG_COORDINATOR not set: the coordinator_address of the environment '
+                 f'file, else {common.DEFAULT_COORDINATOR}')
     extra = os.environ.get('ZEPHYR_EXTRA_MODULES', '')
     if extra:
         rep.ok(f'ZEPHYR_EXTRA_MODULES={extra}')
@@ -148,8 +149,10 @@ def check_env_vars(rep, args):
         rep.info('ZEPHYR_EXTRA_MODULES not set: the module must come from west.yml')
 
 
-def whoami():
-    return common.whoami()
+def owned(place):
+    """A labgrid Place of the session, held by this user."""
+    return common.owned_by({'acquired': place.acquired,
+                            'allowed': list(getattr(place, 'allowed', None) or [])})
 
 
 def check_coordinator(rep, coordinator):
@@ -171,17 +174,14 @@ def check_place(rep, session, name):
     """Returns the Place or None."""
     place = session.places.get(name)
     if place is None:
-        rep.fail(f'place {name} does not exist on the coordinator')
-        close = [n for n in session.places if name.split('-')[0] in n]
-        if close:
-            rep.info(f'similar names: {", ".join(sorted(close))}')
+        rep.fail(f'place {name} does not exist on the coordinator. Places: '
+                 f'{", ".join(sorted(session.places)) or "none"}')
         return None
-    me = whoami()
     if not place.acquired:
         rep.warn(f'place {name} is not acquired. west needs it acquired by you: '
                  f'labgrid-client -p {name} acquire. Twister acquires it per test with '
                  'a map from labgrid-twister-hwmap')
-    elif place.acquired == me or me in getattr(place, 'allowed', []):
+    elif owned(place):
         rep.ok(f'place {name} is acquired by you ({place.acquired})')
     else:
         rep.fail(f'place {name} is acquired by {place.acquired}')
@@ -305,6 +305,11 @@ def default_tools(target):
     return tools
 
 
+# Where the example flash scripts look for vendor tools besides PATH.
+TOOL_DIRS = ('"$HOME/.local/bin" /opt/SEGGER/JLink "$HOME/opt/SEGGER-JLink" '
+             '/opt/st/stm32cubeclt*/STM32CubeProgrammer/bin')
+
+
 def check_exporter_tools(rep, resources, tools):
     if not tools:
         rep.info('no --tool given: exporter tool check skipped')
@@ -314,11 +319,11 @@ def check_exporter_tools(rep, resources, tools):
         hosts.setdefault(res.host, res)
     for host, res in hosts.items():
         for tool in tools:
-            # same places the example flash scripts look: the PATH of the
-            # non-interactive ssh shell, then ~/.local/bin
+            # the places the example flash scripts look, after the PATH of
+            # the non-interactive ssh shell
             script = ('command -v "$1" 2>/dev/null && exit 0; '
-                      'test -x "$HOME/.local/bin/$1" && echo "$HOME/.local/bin/$1" && exit 0; '
-                      'exit 1')
+                      f'for d in {TOOL_DIRS}; do '
+                      'test -x "$d/$1" && echo "$d/$1" && exit 0; done; exit 1')
             cmd = res.wrap_command(['sh', '-c', script, 'sh', tool])
             try:
                 proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -330,7 +335,7 @@ def check_exporter_tools(rep, resources, tools):
                 rep.ok(f'{tool} on exporter {host}: {proc.stdout.strip()}')
             else:
                 rep.fail(f'{tool} not found on exporter {host}: not on the PATH of '
-                         'a non-interactive ssh shell and not in ~/.local/bin')
+                         f'a non-interactive ssh shell and not in {TOOL_DIRS}')
 
 
 def check_console(rep, target, place):
@@ -371,7 +376,7 @@ def check_console(rep, target, place):
         pass
 
 
-def check_hwmap(rep, path, session, pty_default):
+def check_hwmap(rep, path, session):
     import yaml
     try:
         with open(path) as f:
@@ -430,7 +435,7 @@ def check_hwmap(rep, path, session, pty_default):
             if tag and tag != entry.get('platform'):
                 rep.warn(f'{label}: platform {entry.get("platform")} but tag '
                          f'zephyr_platform={tag}')
-            if place.acquired and place.acquired != whoami():
+            if place.acquired and not owned(place):
                 rep.warn(f'{label}: place acquired by {place.acquired}')
             if entry.get('flash_before') != (
                     common.tag_is_true(place.tags.get('zephyr_flash_before'))):
@@ -439,10 +444,6 @@ def check_hwmap(rep, path, session, pty_default):
 
 
 # -- main --------------------------------------------------------------------
-
-def close_session(session):
-    common.close_session(session)
-
 
 def run(args, rep):
     if not check_python(rep):
@@ -467,13 +468,12 @@ def run(args, rep):
         rep.info('no --place/$LG_PLACE: place, resource and console checks skipped')
 
     if args.hwmap:
-        check_hwmap(rep, args.hwmap, session, args.pty)
+        check_hwmap(rep, args.hwmap, session)
 
     if session is not None:
-        close_session(session)
+        common.close_session(session)
 
-    if args.place and place is not None and not common.owned_by(
-            {'acquired': place.acquired, 'allowed': list(getattr(place, 'allowed', []))}):
+    if args.place and place is not None and not owned(place):
         # Loading the environment needs the place acquired by you.
         rep.info('place not acquired by you: environment, resource and console '
                  'checks skipped')
