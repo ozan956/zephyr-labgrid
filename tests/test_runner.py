@@ -165,8 +165,9 @@ def test_flash_address_error_is_readable(runner):
 class FakeScriptDriver:
     """Same signature as FlashScriptDriver.flash() in labgrid master."""
 
-    def __init__(self, args):
+    def __init__(self, args, name=None):
         self.args = args
+        self.name = name
         self.device = object()
         self.calls = []
 
@@ -183,6 +184,13 @@ class FakeManagedFile:
 
     def get_remote_path(self):
         return f'/remote/{os.path.basename(self.local)}'
+
+
+@pytest.fixture(autouse=True)
+def fake_script_driver_class(monkeypatch):
+    """The runner tells script drivers apart with isinstance()."""
+    import labgrid.driver
+    monkeypatch.setattr(labgrid.driver, 'FlashScriptDriver', FakeScriptDriver)
 
 
 @pytest.fixture
@@ -208,7 +216,9 @@ def test_flash_with_script_appends_image_without_placeholder(runner, managed_fil
 
 class FakeTarget:
     def __init__(self, drivers):
-        self.drivers = drivers      # protocol/class name -> driver
+        self.by_key = drivers       # protocol/class name -> driver
+        self.drivers = list(drivers.values())   # as labgrid's Target.drivers
+        self.activated = []
         self.deactivated = []
         self.cleaned = False
 
@@ -216,13 +226,16 @@ class FakeTarget:
         from labgrid.exceptions import NoDriverFoundError
         key = cls if isinstance(cls, str) else cls.__name__
         if name is not None:
-            for drv in self.drivers.values():
+            for drv in self.drivers:
                 if getattr(drv, 'name', None) == name:
                     return drv
             raise NoDriverFoundError(name)
-        if key in self.drivers:
-            return self.drivers[key]
+        if key in self.by_key:
+            return self.by_key[key]
         raise NoDriverFoundError(key)
+
+    def activate(self, drv):
+        self.activated.append(drv)
 
     def deactivate(self, drv):
         self.deactivated.append(drv)
@@ -486,3 +499,27 @@ def test_platform_must_fit_the_build(runner, lab, monkeypatch):
     runner.ignore_platform = True
     fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}))
     runner.do_run('flash')
+
+
+def test_flasher_is_not_the_reset_script(runner):
+    flash = FakeScriptDriver(['{image}'])
+    reset = FakeScriptDriver(['{device.path}'], name='reset')
+    target = FakeTarget({'flash': flash, 'reset': reset})
+    assert runner._get_flasher(target) == (flash, 'script')
+    assert target.activated == [flash]
+    with pytest.raises(RuntimeError, match='no flash driver'):
+        runner._get_flasher(FakeTarget({'reset': reset}))
+    two = FakeTarget({'a': flash, 'b': FakeScriptDriver([], name='other')})
+    with pytest.raises(RuntimeError, match='pick one with --driver'):
+        runner._get_flasher(two)
+
+
+def test_reset_command_uses_the_reset_script(runner, monkeypatch):
+    reset = FakeScriptDriver(['{device.path}'], name='reset')
+    power = type('Power', (), {'cycle': lambda self: pytest.fail('power cycled')})()
+    target = FakeTarget({'flash': FakeScriptDriver(['{image}']), 'reset': reset,
+                         'PowerProtocol': power})
+    fake_environment(monkeypatch, target)
+    runner.do_run('reset')
+    assert reset.calls == [(None, None)]    # its own args, no image
+    assert target.deactivated == [reset]

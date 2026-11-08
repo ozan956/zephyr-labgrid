@@ -39,6 +39,8 @@ from zephyr_labgrid import common  # noqa: E402
 # Under Twister, how long to look for a starting labgrid-pty, and how long
 # to wait for its console to open.
 TWISTER_GRACE = 5.0
+# Name of the FlashScriptDriver that resets the board, see _reset_target.
+RESET_SCRIPT = 'reset'
 AUTO_CONSOLE_WAIT = 30.0
 
 
@@ -160,12 +162,18 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             return target.get_driver('BootstrapProtocol'), 'bootstrap'
         except NoDriverFoundError:
             pass
-        try:
-            return target.get_driver('FlashScriptDriver'), 'script'
-        except NoDriverFoundError:
-            raise RuntimeError('no flash driver (BootstrapProtocol or FlashScriptDriver) '
-                               f'in {self.env_file}; check the drivers section and the '
-                               f'resources of place "{self.place}"') from None
+        # A FlashScriptDriver named "reset" is the reset script, not a flasher.
+        scripts = [d for d in target.drivers
+                   if isinstance(d, FlashScriptDriver) and d.name != RESET_SCRIPT]
+        if len(scripts) == 1:
+            target.activate(scripts[0])
+            return scripts[0], 'script'
+        if scripts:
+            raise RuntimeError(f'{self.env_file} has several FlashScriptDrivers, pick one '
+                               'with --driver')
+        raise RuntimeError('no flash driver (BootstrapProtocol or FlashScriptDriver) '
+                           f'in {self.env_file}; check the drivers section and the '
+                           f'resources of place "{self.place}"')
 
     def _flash_address(self) -> str:
         """Flash offset of the image as hex string, from the build config.
@@ -210,21 +218,42 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         drv.flash(args=args, timeout=self.timeout)
 
     def _reset_target(self, target, required=False):
-        """Reset through ResetProtocol, then PowerProtocol, then OpenOCD.
+        """Reset through ResetProtocol, then a FlashScriptDriver named
+        "reset", then PowerProtocol, then OpenOCD.
 
         After flashing this is best effort: without a reset driver the
         flasher is expected to have reset the board (e.g. OpenOCD 'reset
         run'). For ``west reset`` (``required``) no way to reset is an error.
         """
+        from labgrid.driver import FlashScriptDriver
         from labgrid.exceptions import NoDriverFoundError
 
-        for proto, action in (('ResetProtocol', 'reset'), ('PowerProtocol', 'cycle')):
-            try:
-                drv = target.get_driver(proto)
-            except NoDriverFoundError:
-                continue
-            self.logger.info(f'resetting target via {proto}')
-            getattr(drv, action)()
+        try:
+            drv = target.get_driver('ResetProtocol')
+        except NoDriverFoundError:
+            pass
+        else:
+            self.logger.info('resetting target via ResetProtocol')
+            drv.reset()
+            return
+        # Boards that only a vendor tool can reset (J-Link, esptool): the lab
+        # owner adds the command as a FlashScriptDriver named "reset".
+        try:
+            drv = target.get_driver(FlashScriptDriver, name=RESET_SCRIPT)
+        except NoDriverFoundError:
+            pass
+        else:
+            self.logger.info('resetting target via the reset script')
+            drv.flash(timeout=self.timeout)
+            target.deactivate(drv)
+            return
+        try:
+            drv = target.get_driver('PowerProtocol')
+        except NoDriverFoundError:
+            pass
+        else:
+            self.logger.info('resetting target via PowerProtocol')
+            drv.cycle()
             return
         try:
             from labgrid.driver import OpenOCDDriver
@@ -238,7 +267,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             return
         if required:
             raise RuntimeError(f'can not reset place "{self.place}": {self.env_file} has '
-                               'no ResetProtocol, PowerProtocol or OpenOCD driver')
+                               'no ResetProtocol, reset script, PowerProtocol or OpenOCD '
+                               'driver')
         self.logger.info('no reset/power driver on target, relying on flasher reset')
 
     def _board(self):
