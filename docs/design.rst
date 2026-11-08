@@ -153,11 +153,13 @@ Hardware maps from ``labgrid-twister-hwmap`` pass the hidden ``--acquire``
 and ``--acquire-wait`` options to the runner and to ``labgrid-pty``. Twister
 starts both at the same time when the board is flashed with the console
 open, so both acquire.
-The tools on one host coordinate through a lock directory.
+The tools of one labgrid user on one host coordinate through a lock
+directory. Its name has the owner name of labgrid, so tools with another
+``LG_USERNAME`` never wait for its lock.
 
 ::
 
-   $TMPDIR/zephyr-labgrid-<uid>/<coordinator>-<place>/
+   $TMPDIR/zephyr-labgrid-<uid>/<coordinator>-<host>_<user>-<place>/
      lock                 flock() while talking to the coordinator
      <pid>.pid            one per running tool that uses the place
      acquired-by-tools       present while a tool holds the place
@@ -172,9 +174,11 @@ before the resources have arrived, and the second tool would otherwise see
 a place without resources.
 
 The release itself runs in a short child process (``common._release_main``)
-that the tool starts and waits for. The child takes the lock, checks again
-that no tool uses the place, runs ``labgrid-client release`` and removes the
-marker. Twister stops a tool with SIGTERM and sends SIGKILL 0.5 s later,
+that the tool starts first and waits for. The child takes the lock, removes
+the pid file of the tool, checks that no other tool uses the place, runs
+``labgrid-client release`` and removes the marker. The tool itself never
+waits for the lock when it releases, because another tool may hold it for
+a second while it talks to the coordinator. Twister stops a tool with SIGTERM and sends SIGKILL 0.5 s later,
 and it collects the processes to kill before the SIGTERM. A child started
 after that survives the SIGKILL and finishes the release. ``labgrid-pty``
 starts the release before it closes the console for the same reason. The

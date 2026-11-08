@@ -60,7 +60,8 @@ def release_in_process(monkeypatch):
     """Run the release in this process so that tests can fake labgrid-client.
     tests/test_common.py covers the real child process."""
     def run(self):
-        if not _common.release_if_unused(self.place, self.coordinator, log=self.log):
+        if not _common.release_if_unused(self.place, self.coordinator, log=self.log,
+                                         pid=self.pid):
             raise _common.PlaceLockError(f'could not release place {self.place}')
     monkeypatch.setattr(_common.PlaceLock, '_release_in_child', run)
 

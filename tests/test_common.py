@@ -146,6 +146,7 @@ def test_placelock_shared_by_two_tools(coordinator, lock_dir, monkeypatch):
     first.acquire()
     # second tool: another pid that is alive
     second = common.PlaceLock('x')
+    second.pid = 999999
     second.pidfile = os.path.join(second.dir, '999999.pid')
     monkeypatch.setattr(common, 'pid_alive', lambda pid: pid == 999999 or pid == os.getpid())
     log = []
@@ -280,6 +281,42 @@ def test_release_survives_sigkill(fake_client_on_path, lock_dir):
         time.sleep(0.1)
     assert fake_client_on_path.read_text().split() == ['acquire', 'release']
     assert not os.path.exists(marker)
+
+
+def test_release_survives_sigkill_while_the_lock_is_busy(fake_client_on_path, lock_dir):
+    """Another tool may hold the lock of the place while the release
+    starts, for example one waiting for the place. A SIGKILL meanwhile must
+    not leave the place acquired."""
+    import signal
+    import subprocess
+    import sys
+    code = ('import sys; sys.path.insert(0, sys.argv[1]); '
+            'from zephyr_labgrid import common; '
+            'lock = common.PlaceLock("x", "c:1"); lock.acquire(); '
+            'print("ready", flush=True); sys.stdin.readline(); lock.release()')
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    proc = subprocess.Popen([sys.executable, '-c', code, root], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, text=True)
+    assert proc.stdout.readline().strip() == 'ready'
+    with common.PlaceLock('x', 'c:1')._locked():
+        proc.stdin.write('\n')
+        proc.stdin.flush()
+        time.sleep(1.0)                     # release has started, the lock is busy
+        proc.send_signal(signal.SIGKILL)
+        proc.wait()
+    marker = os.path.join(common.place_dir('x', 'c:1'), common.PlaceLock.MARKER)
+    deadline = time.monotonic() + 10
+    while os.path.exists(marker) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert fake_client_on_path.read_text().split() == ['acquire', 'release']
+    assert not os.path.exists(marker)
+    assert not [n for n in os.listdir(common.place_dir('x', 'c:1')) if n.endswith('.pid')]
+
+
+def test_lock_dir_is_per_labgrid_user(lock_dir, monkeypatch):
+    mine = common.place_dir('x', 'c:1')
+    monkeypatch.setenv('LG_USERNAME', 'ci')
+    assert common.place_dir('x', 'c:1') != mine
 
 
 def test_placelock_release_without_acquire_is_noop(coordinator, lock_dir):

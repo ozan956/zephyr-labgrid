@@ -356,9 +356,11 @@ def lock_root():
 
 
 def place_dir(place, coordinator=None):
-    """Directory where the tools on this host coordinate for one place."""
+    """Directory where the tools of one labgrid user on this host
+    coordinate for one place. Users with their own LG_USERNAME never share
+    it, so that they never wait for each other's lock."""
     coordinator = coordinator or default_coordinator()
-    key = re.sub(r'[^A-Za-z0-9._-]+', '_', f'{coordinator}-{place}')
+    key = re.sub(r'[^A-Za-z0-9._-]+', '_', f'{coordinator}-{whoami()}-{place}')
     return os.path.join(lock_root(), key)
 
 
@@ -539,8 +541,9 @@ def release_places_on_sigterm():
     signal.signal(signal.SIGTERM, handler)
 
 
-def release_if_unused(place, coordinator=None, log=print):
-    """Release the place when the tools still own it and none uses it.
+def release_if_unused(place, coordinator=None, log=print, pid=None):
+    """Unregister the tool ``pid``, then release the place when the tools
+    still own it and none uses it.
 
     Runs in the child process that PlaceLock.release() starts, under the
     lock of the place, so a tool that starts meanwhile waits for it.
@@ -548,6 +551,11 @@ def release_if_unused(place, coordinator=None, log=print):
     """
     lock = PlaceLock(place, coordinator, log=log)
     with lock._locked():
+        if pid is not None:
+            try:
+                os.unlink(os.path.join(lock.dir, f'{pid}.pid'))
+            except OSError:
+                pass
         if not os.path.exists(lock.marker):
             return True     # released already, or acquired by hand
         others = lock._other_users()
@@ -568,7 +576,7 @@ def release_if_unused(place, coordinator=None, log=print):
 
 
 def _release_main(argv):
-    """Entry point of the release child process: PLACE COORDINATOR."""
+    """Entry point of the release child process: PLACE COORDINATOR PID."""
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, signal.SIG_IGN)
 
@@ -577,7 +585,7 @@ def _release_main(argv):
             print(msg, flush=True)
         except OSError:
             pass    # the parent is gone, the release still happens
-    return 0 if release_if_unused(argv[0], argv[1], log=log) else 1
+    return 0 if release_if_unused(argv[0], argv[1], log=log, pid=int(argv[2])) else 1
 
 
 class PlaceLock:
@@ -591,7 +599,8 @@ class PlaceLock:
         self.coordinator = coordinator or default_coordinator()
         self.log = log or (lambda msg: None)
         self.dir = place_dir(place, self.coordinator)
-        self.pidfile = os.path.join(self.dir, f'{os.getpid()}.pid')
+        self.pid = os.getpid()
+        self.pidfile = os.path.join(self.dir, f'{self.pid}.pid')
         self.marker = os.path.join(self.dir, self.MARKER)
         self.registered = False
 
@@ -683,26 +692,14 @@ class PlaceLock:
             else:
                 raise PlaceLockError(f'could not acquire place {self.place}: {out}')
             with open(self.pidfile, 'w') as f:
-                f.write(f'{os.getpid()}\n')
+                f.write(f'{self.pid}\n')
             self.registered = True
             return None
 
     def release(self):
         if not self.registered:
             return
-        with self._locked():
-            self.registered = False
-            try:
-                os.unlink(self.pidfile)
-            except OSError:
-                pass
-            if not os.path.exists(self.marker):
-                return  # acquired by hand, not ours to release
-            others = self._other_users()
-            if others:
-                self.log(f'place {self.place} is still used by another tool '
-                         f'(pid {", ".join(map(str, others))}), not releasing')
-                return
+        self.registered = False
         self._release_in_child()
 
     def _release_in_child(self):
@@ -710,10 +707,12 @@ class PlaceLock:
 
         Twister sends SIGTERM and 0.5 s later SIGKILL, and it collects the
         children to kill before the SIGTERM. A child started after that
-        survives the SIGKILL of this process and finishes the release.
+        survives the SIGKILL of this process and finishes the release. It
+        is started before anything waits for the lock of the place, which
+        another tool may hold for a while.
         """
         proc = subprocess.Popen(python_child('common', '_release_main', self.place,
-                                             self.coordinator),
+                                             self.coordinator, str(self.pid)),
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, start_new_session=True)
         out, _ = proc.communicate()
