@@ -401,9 +401,8 @@ own ``LG_USERNAME``.
 
 -  ser2net 4.6.1 or newer. ser2net 4.6.0 (Ubuntu 24.04) never answers the
    RFC2217 purge request, and plain pyserial times out on open. ``labgrid-pty``
-   detects this and continues without purge, at the cost of a one second
-   probe per host and day, and ``LG_PTY_NO_PURGE=1`` skips the probe. See labgrid
-   issue #1396.
+   detects this and continues without purge, at the cost of one second
+   per console. See labgrid issue #1396.
 -  openocd 0.11 or newer so that USB path selection works with several
    probes on one host.
 -  udev rules that give the exporter user access to the probes

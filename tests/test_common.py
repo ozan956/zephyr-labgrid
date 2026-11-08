@@ -25,14 +25,6 @@ def test_coordinator_for_env_reads_option(tmp_path, clean_env, monkeypatch):
     assert common.coordinator_for_env('/does/not/exist.yaml') == 'other:1'
 
 
-def test_purge_mode_from_env(clean_env, monkeypatch):
-    assert common.purge_mode_from_env() == 'auto'
-    monkeypatch.setenv('ZEPHYR_LABGRID_PURGE', 'on')
-    assert common.purge_mode_from_env() == 'on'
-    monkeypatch.setenv('LG_PTY_NO_PURGE', '1')
-    assert common.purge_mode_from_env() == 'off'
-
-
 # -- purge workaround --------------------------------------------------------
 
 class FakeItem:
@@ -69,11 +61,11 @@ def make_port(cls, answer):
 def test_purge_auto_detects_broken_server(rfc2217_class, monkeypatch):
     monkeypatch.setattr(common, 'PURGE_PROBE_TIMEOUT', 0.01)
     warnings = []
-    assert common.install_purge_workaround('auto', warn=warnings.append)
+    common.install_purge_workaround(warn=warnings.append)
     port = make_port(rfc2217_class, answer=False)
     port.rfc2217_send_purge(1)          # times out, must not raise
     assert common.purge_was_broken()
-    assert len(warnings) == 1 and 'LG_PTY_NO_PURGE' in warnings[0]
+    assert len(warnings) == 1 and 'without purge' in warnings[0]
     port.rfc2217_send_purge(1)          # skipped now
     assert port._rfc2217_options['purge'].set_calls == 1
     # another port in the same process is skipped as well
@@ -84,27 +76,12 @@ def test_purge_auto_detects_broken_server(rfc2217_class, monkeypatch):
 
 
 def test_purge_auto_keeps_working_server(rfc2217_class):
-    common.install_purge_workaround('auto')
+    common.install_purge_workaround()
     port = make_port(rfc2217_class, answer=True)
     port.rfc2217_send_purge(1)
     port.rfc2217_send_purge(1)
     assert port._rfc2217_options['purge'].set_calls == 2
     assert not common.purge_was_broken()
-
-
-def test_purge_off_disables_resets(rfc2217_class):
-    assert common.install_purge_workaround('off')
-    port = make_port(rfc2217_class, answer=False)
-    port.reset_input_buffer()
-    port.reset_output_buffer()
-
-
-def test_purge_on_changes_nothing(rfc2217_class):
-    before = rfc2217_class.rfc2217_send_purge
-    assert not common.install_purge_workaround('on')
-    assert rfc2217_class.rfc2217_send_purge is before
-    with pytest.raises(ValueError):
-        common.install_purge_workaround('sometimes')
 
 
 # -- PlaceLock ---------------------------------------------------------------
@@ -327,21 +304,6 @@ def test_console_ready_ignores_dead_process(lock_dir):
     assert not common.console_is_ready('p', 'c:1')
     assert not os.path.exists(stale)
 
-
-def test_purge_cache_is_per_host(lock_dir, rfc2217_class, monkeypatch):
-    monkeypatch.setattr(common, 'PURGE_PROBE_TIMEOUT', 0.01)
-    common.install_purge_workaround('auto')
-    port = make_port(rfc2217_class, answer=False)
-    port.portstr = 'rfc2217://exporter:40001'
-    port.rfc2217_send_purge(1)
-    cache = common.purge_cache_path(port)
-    assert cache.endswith('purge-broken-exporter') and os.path.isfile(cache)
-    # a new process (flag cleared) on another port of the same host skips the probe
-    delattr(rfc2217_class, common._PURGE_FLAG)
-    other = make_port(rfc2217_class, answer=False)
-    other.portstr = 'rfc2217://exporter:40002'
-    other.rfc2217_send_purge(1)
-    assert other._rfc2217_options['purge'].set_calls == 0
 
 
 def test_resolve_env_order(clean_env, monkeypatch):

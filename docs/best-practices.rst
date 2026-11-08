@@ -60,8 +60,8 @@ Console
    or keep the input open (``sleep 60 | labgrid-pty ...``).
 -  Expect the boot banner twice with OpenOCD, because ``reset halt`` and ``reset run``
    each start the board. Harness regexes that count lines should allow it.
--  Ask for ser2net 4.6.1 or newer on exporters. ``LG_PTY_NO_PURGE=1`` is a
-   workaround for 4.6.0, not a fix.
+-  Ask for ser2net 4.6.1 or newer on exporters. ``labgrid-pty`` works around
+   4.6.0 at the cost of one second per console, it does not fix it.
 -  In your own labgrid scripts, do not poll a remote console with
    ``ConsoleProtocol.read(timeout=...)`` in a tight loop. Every call
    renegotiates the RFC2217 port settings and bytes get lost.

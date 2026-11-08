@@ -310,8 +310,7 @@ If something goes wrong
    resource. Ask the lab owner.
 -  ``the serial server did not answer the RFC2217 purge request``. The
    exporter runs ser2net 4.6.0, and ``labgrid-pty`` continues without
-   purge. Set ``LG_PTY_NO_PURGE=1`` to skip the one second probe. See
-   :ref:`check-exporter-host`.
+   purge, see :ref:`check-exporter-host`.
 -  Twister reports ``Serial Device Error`` when ``labgrid-pty`` could not
    start. Run ``labgrid-pty`` by hand to see why.
 -  Twister reports ``Timeout during flashing`` or

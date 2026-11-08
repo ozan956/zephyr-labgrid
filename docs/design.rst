@@ -226,10 +226,9 @@ RFC2217 purge
 
 ser2net 4.6.0 never answers the RFC2217 PURGE request (labgrid issue
 #1396). pyserial sends two purges in ``open()`` and waits 3 s for each, then
-fails. In ``auto`` mode ``labgrid-pty`` patches ``serial.rfc2217.Serial`` to send
-the first purge with a 1 s timeout. When it is not answered, later purges
-are skipped and the host is remembered for a day in the lock directory.
-``off`` (``LG_PTY_NO_PURGE=1``) never purges, ``on`` is plain pyserial.
+fails. ``labgrid-pty`` patches ``serial.rfc2217.Serial`` to send the first
+purge of the process with a 1 s timeout. When it is not answered, the
+process sends no more purges.
 
 Twister behaviour this relies on
 --------------------------------

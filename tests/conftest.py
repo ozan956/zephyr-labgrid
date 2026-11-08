@@ -75,8 +75,7 @@ def lock_dir(tmp_path, monkeypatch):
 def clean_env(monkeypatch):
     """Every test starts without the variables the tools read."""
     for var in ('ZEPHYR_LABGRID_ENV', 'ZEPHYR_LABGRID_ENV_DIR', 'LG_ENV', 'LG_PLACE',
-                'LG_COORDINATOR',
-                'LG_PTY_NO_PURGE', 'ZEPHYR_LABGRID_PURGE'):
+                'LG_COORDINATOR'):
         monkeypatch.delenv(var, raising=False)
     # labgrid-client's owner name for this user is then h/u
     monkeypatch.setenv('LG_HOSTNAME', 'h')

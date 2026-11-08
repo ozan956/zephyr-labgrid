@@ -62,8 +62,7 @@ def test_place_from_twister_platform(clean_env, monkeypatch, place_info):
 def test_defaults_come_from_environment(clean_env, monkeypatch):
     monkeypatch.setenv('ZEPHYR_LABGRID_ENV', '/e.yaml')
     monkeypatch.setenv('LG_PLACE', 'p1')
-    monkeypatch.setenv('LG_PTY_NO_PURGE', '1')
     args = pty.build_parser().parse_args([])
-    assert (args.env, args.place, args.purge) == ('/e.yaml', 'p1', 'off')
-    args = pty.build_parser().parse_args(['-e', '/x.yaml', '-p', 'p2', '--purge', 'auto'])
-    assert (args.env, args.place, args.purge) == ('/x.yaml', 'p2', 'auto')
+    assert (args.env, args.place) == ('/e.yaml', 'p1')
+    args = pty.build_parser().parse_args(['-e', '/x.yaml', '-p', 'p2'])
+    assert (args.env, args.place) == ('/x.yaml', 'p2')

@@ -69,10 +69,6 @@ def build_parser():
     # that Twister acquires each place for a test and releases it after.
     parser.add_argument('--acquire', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--acquire-wait', type=float, default=0.0, help=argparse.SUPPRESS)
-    parser.add_argument('--purge', choices=['auto', 'on', 'off'],
-                        default=common.purge_mode_from_env(),
-                        help='RFC2217 purge handling, see docs (default: auto, '
-                             'or off when $LG_PTY_NO_PURGE is set)')
     return parser
 
 
@@ -122,7 +118,7 @@ def main(argv=None):
     except ImportError as e:
         die(f'python package missing: {e}')
 
-    common.install_purge_workaround(args.purge, warn=warn)
+    common.install_purge_workaround(warn=warn)
 
     # Twister may terminate us at any time, also while we are still
     # acquiring the place. Handle the signals from the start so that the

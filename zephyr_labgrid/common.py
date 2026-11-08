@@ -263,101 +263,48 @@ def coordinator_for_env(env_file):
 
 
 # ---------------------------------------------------------------------------
-# RFC2217 purge workaround
+# RFC2217 purge
 #
-# ser2net 4.6.0 (Ubuntu 24.04) never answers the RFC2217 PURGE request, see
-# labgrid issue #1396. pyserial sends two purge requests in open() and waits
-# three seconds for each answer before it gives up with
-# "timeout while waiting for option 'purge'". The console would never open.
-#
-# Mode 'auto' (default): send the first purge with a short timeout. If it is
-# not answered, remember that for the rest of the process and skip all later
-# purges. Costs one short wait per process on a broken ser2net.
-# Mode 'off' ($LG_PTY_NO_PURGE=1): never send a purge. Instant.
-# Mode 'on': plain pyserial behaviour.
+# ser2net 4.6.0 never answers the RFC2217 PURGE request (labgrid issue
+# #1396), and pyserial then fails to open the port. The first purge of a
+# process gets a short timeout, and when it is not answered the process
+# sends no more purges.
 # ---------------------------------------------------------------------------
 
 PURGE_PROBE_TIMEOUT = 1.0
-PURGE_CACHE_SECONDS = 24 * 3600
 _PURGE_FLAG = '_zephyr_labgrid_purge_broken'
 
 
-def purge_mode_from_env():
-    if os.environ.get('LG_PTY_NO_PURGE'):
-        return 'off'
-    return os.environ.get('ZEPHYR_LABGRID_PURGE', 'auto')
-
-
-def install_purge_workaround(mode='auto', warn=None):
-    """Patch ``serial.rfc2217.Serial`` according to ``mode``.
-
-    ``warn`` is called with a message when a broken ser2net is detected.
-    Returns True when a patch was installed.
-    """
+def install_purge_workaround(warn=None):
+    """Patch serial.rfc2217.Serial. ``warn`` gets a message when the
+    server does not answer the purge."""
     import serial
     import serial.rfc2217
 
     cls = serial.rfc2217.Serial
-    if mode == 'on':
-        return False
-    if mode == 'off':
-        cls.reset_input_buffer = lambda self: None
-        cls.reset_output_buffer = lambda self: None
-        return True
-    if mode != 'auto':
-        raise ValueError(f'unknown purge mode {mode!r}')
-
     if getattr(cls, '_zephyr_labgrid_patched', False):
-        return True
+        return
 
     def send_purge(self, value):
         if getattr(cls, _PURGE_FLAG, False):
             return
-        cache = purge_cache_path(self)
-        if cache and os.path.isfile(cache):
-            if time.time() - os.path.getmtime(cache) < PURGE_CACHE_SECONDS:
-                # a previous process found this server broken, do not wait again
-                setattr(cls, _PURGE_FLAG, True)
-                return
-            os.unlink(cache)
         item = self._rfc2217_options['purge']
         item.set(value)
         try:
             item.wait(PURGE_PROBE_TIMEOUT)
         except serial.SerialException:
             setattr(cls, _PURGE_FLAG, True)
-            if cache:
-                try:
-                    os.makedirs(os.path.dirname(cache), mode=0o700, exist_ok=True)
-                    open(cache, 'w').close()
-                except OSError:
-                    pass
             if warn:
                 warn('the serial server did not answer the RFC2217 purge request '
-                     '(ser2net 4.6.0?). Continuing without purge. Set '
-                     'LG_PTY_NO_PURGE=1 to skip the wait, or upgrade ser2net to '
-                     '4.6.1 or newer (labgrid issue #1396).')
+                     '(ser2net 4.6.0, labgrid issue #1396). Going on without purge, '
+                     'ser2net 4.6.1 or newer fixes it.')
 
     cls.rfc2217_send_purge = send_purge
     cls._zephyr_labgrid_patched = True
-    return True
-
-
-def purge_cache_path(port):
-    """File that remembers a serial server host without purge support for
-    PURGE_CACHE_SECONDS. Keyed by host only: the exporter starts one ser2net
-    per acquired port on a new TCP port each time, but the ser2net version
-    is the same for the whole host. None when the URL is unknown."""
-    try:
-        host, _ = port.from_url(port.portstr)
-    except Exception:
-        return None
-    key = re.sub(r'[^A-Za-z0-9._-]+', '_', str(host))
-    return os.path.join(lock_root(), f'purge-broken-{key}')
 
 
 def purge_was_broken():
-    """True when the auto mode detected a server that ignores purge."""
+    """True when the server did not answer a purge in this process."""
     try:
         import serial.rfc2217
     except ImportError:

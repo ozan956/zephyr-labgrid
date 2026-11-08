@@ -141,8 +141,6 @@ def check_env_vars(rep, args):
         rep.ok(f'LG_COORDINATOR={os.environ["LG_COORDINATOR"]}')
     else:
         rep.warn(f'LG_COORDINATOR not set, using {common.DEFAULT_COORDINATOR}')
-    if os.environ.get('LG_PTY_NO_PURGE'):
-        rep.ok('LG_PTY_NO_PURGE set: RFC2217 purge is skipped')
     extra = os.environ.get('ZEPHYR_EXTRA_MODULES', '')
     if extra:
         rep.ok(f'ZEPHYR_EXTRA_MODULES={extra}')
@@ -339,7 +337,7 @@ def check_console(rep, target, place):
     if place is None or not place.acquired:
         return
     from labgrid.exceptions import NoDriverFoundError, NoResourceFoundError
-    common.install_purge_workaround('auto', warn=lambda m: None)
+    common.install_purge_workaround()
     start = time.monotonic()
     try:
         console = target.get_driver('ConsoleProtocol')
@@ -355,8 +353,8 @@ def check_console(rep, target, place):
     rep.ok(f'console opened in {took:.1f} s')
     if common.purge_was_broken():
         rep.warn('serial server ignores the RFC2217 purge request (ser2net 4.6.0, '
-                 'labgrid issue #1396). labgrid-pty handles it, set LG_PTY_NO_PURGE=1 '
-                 'to avoid the wait, or upgrade ser2net to 4.6.1')
+                 'labgrid issue #1396). labgrid-pty goes on without purge, ser2net '
+                 '4.6.1 or newer fixes it')
     else:
         rep.ok('RFC2217 purge answered')
     ser = getattr(console, 'serial', None)
