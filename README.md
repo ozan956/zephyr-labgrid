@@ -7,8 +7,9 @@ The flash tool (OpenOCD, esptool, STM32CubeProgrammer, ...) runs on the
 exporter next to the board.
 
 **This is an experimental release (0.1).** Tested with Zephyr 4.5 and labgrid master
-on an STM32F746G-DISCO (OpenOCD and STM32CubeProgrammer) and an
-ESP32-DevKitC (esptool), with Twister's console, ztest and pytest harnesses.
+on an STM32F746G-DISCO (OpenOCD and STM32CubeProgrammer), an
+ESP32-DevKitC (esptool) and an Alif Ensemble E8 DevKit (J-Link), with
+Twister's console, ztest and pytest harnesses.
 Feedback and reports from other labs and boards are very welcome.
 
 ## Requirements

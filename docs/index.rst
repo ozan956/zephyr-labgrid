@@ -13,7 +13,8 @@ desk. ``west flash`` and Twister work unchanged. The module adds a
 tool runs on the exporter next to the board.
 
 This is an experimental release (0.1). It is tested with Zephyr 4.5 and
-labgrid master on an STM32F746G-DISCO and an ESP32-DevKitC.
+labgrid master on an STM32F746G-DISCO, an ESP32-DevKitC and an Alif Ensemble
+E8 DevKit.
 
 Where to start
 --------------

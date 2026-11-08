@@ -237,6 +237,59 @@ labgrid runs the script over ssh with a small PATH. Install esptool where
 the script can find it, on ``PATH``, in ``~/.local/bin``, or as a module of the
 system ``python3``.
 
+Alif Ensemble boards with the on-board J-Link
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Ensemble E8 DevKit shows up on USB as a SEGGER J-Link (``1366:1024``)
+with one serial port. The J-Link writes the image into MRAM over SWD, and
+the serial port carries the console. Four things differ from the boards
+above.
+
+-  The M55 cores only run when the Secure Enclave starts them from its
+   table of images (ATOC), and the J-Link can not attach to a core that does
+   not run. Write an ATOC that boots the core from MRAM once per board with
+   the Alif Security Toolkit (SETOOLS) over the SE-UART. Put SW4 in the
+   SE-UART position, copy ``zephyr.bin`` of any build to ``build/images/``
+   and ``examples/ensemble_e8_dk/zephyr-hp.json`` to ``build/config/`` of
+   the SETOOLS directory, then run the two commands below. After that the
+   J-Link writes every new image to the same MRAM address, and the Secure
+   Enclave boots it without checking it, because the entry is unsigned.
+
+   .. code-block:: console
+
+      $ ./app-gen-toc -f build/config/zephyr-hp.json
+      $ ./app-write-mram -c /dev/ttyACM1
+
+-  The serial port reaches one UART at a time, set by SW4. Leave SW4 in the
+   UART4 position, the console of the M55 HP core. The boot messages of the
+   Secure Enclave appear on that port too, before the Zephyr banner.
+-  Install the SEGGER J-Link software on the exporter. ``jlink-flash.sh``
+   looks for ``JLinkExe`` on ``PATH``, in ``/opt/SEGGER/JLink`` and in
+   ``~/opt/SEGGER-JLink``.
+-  A core reset does not start the new image. ``jlink-flash.sh`` pulls the
+   reset pin after writing, so the Secure Enclave restarts and boots it.
+
+Export the J-Link twice, as ``USBFlashableDevice`` for the flash script and
+as ``USBSerialPort`` for the console, both matched on its serial number.
+
+.. code:: yaml
+
+   ensemble-e8-dk:
+     USBSerialPort:
+       match:
+         ID_SERIAL_SHORT: '001219407405'
+         ID_USB_INTERFACE_NUM: '00'
+       speed: 115200
+     USBFlashableDevice:
+       match:
+         ID_SERIAL_SHORT: '001219407405'
+         SUBSYSTEM: 'usb'
+         DEVTYPE: 'usb_device'
+
+Tag the place with ``zephyr_platform=ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp``
+and ``zephyr_env=ensemble_e8_dk/labgrid-hp.yaml``. The environment file
+passes the J-Link device name of the core to the flash script.
+
 4. Hand out hardware map entries
 --------------------------------
 
