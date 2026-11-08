@@ -12,33 +12,34 @@ an unusual setup. Users start at :ref:`the documentation index <index>`.
 Pieces
 ------
 
-+----------------------+----------------------+----------------------+
-| Piece                | File                 | Role                 |
-+======================+======================+======================+
-| west runner          | ``scripts            | ``west flash``,      |
-| ``labgrid``          | /labgrid_runner.py`` | ``west reset``       |
-+----------------------+----------------------+----------------------+
-| module glue          | ``                   | registers the runner |
-|                      | zephyr/module.yml``, | for every board      |
-|                      | ``CMakeLists.txt``   |                      |
-+----------------------+----------------------+----------------------+
-| console bridge       | ``zep                | Twister              |
-|                      | hyr_labgrid/pty.py`` | ``serial_pty``,      |
-|                      | (``labgrid-pty``)    | interactive console  |
-+----------------------+----------------------+----------------------+
-| hardware map         | ``zephy              | Twister map from     |
-| generator            | r_labgrid/hwmap.py`` | place tags           |
-+----------------------+----------------------+----------------------+
-| setup check          | ``zephy              | one line per check   |
-|                      | r_labgrid/check.py`` |                      |
-+----------------------+----------------------+----------------------+
-| shared helpers       | ``zephyr             | env lookup, place    |
-|                      | _labgrid/common.py`` | locks, purge         |
-|                      |                      | workaround           |
-+----------------------+----------------------+----------------------+
-| tag lookup           | ``zephyr_la          | child process that   |
-|                      | bgrid/placeinfo.py`` | reads place tags     |
-+----------------------+----------------------+----------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 40 35
+
+   * - Piece
+     - File
+     - Role
+   * - west runner ``labgrid``
+     - ``scripts/labgrid_runner.py``
+     - ``west flash``, ``west reset``
+   * - module glue
+     - ``zephyr/module.yml``, ``CMakeLists.txt``
+     - registers the runner for every board
+   * - console bridge
+     - ``zephyr_labgrid/pty.py`` (``labgrid-pty``)
+     - Twister ``serial_pty``, interactive console
+   * - hardware map generator
+     - ``zephyr_labgrid/hwmap.py``
+     - Twister map from place tags
+   * - setup check
+     - ``zephyr_labgrid/check.py``
+     - one line per check
+   * - shared helpers
+     - ``zephyr_labgrid/common.py``
+     - places and owners, env lookup, place locks, purge workaround
+   * - place lookup
+     - ``zephyr_labgrid/placeinfo.py``
+     - child process that reads the places of the coordinator
 
 ``CMakeLists.txt`` calls ``board_finalize_runner_args(labgrid)``. Zephyr
 processes module CMake before ``cmake/flash``, so the runner shows up in

@@ -144,30 +144,23 @@ from ``--dev-id``, so one file serves all boards of the same family.
 The flash driver is either a driver that implements labgrid's
 ``BootstrapProtocol`` or a ``FlashScriptDriver``. Options today.
 
-+----------------------+----------------------+----------------------+
-| Driver               | Tool on the exporter | Notes                |
-+======================+======================+======================+
-| ``OpenOCDDriver``    | openocd >= 0.11      | Works for ST-Link,   |
-|                      |                      | CMSIS-DAP, J-Link    |
-|                      |                      | with OpenOCD         |
-|                      |                      | support. Uses the    |
-|                      |                      | USB path, so several |
-|                      |                      | probes on one        |
-|                      |                      | exporter are fine.   |
-|                      |                      | Tested.              |
-+----------------------+----------------------+----------------------+
-| `                    | anything             | Runs your script on  |
-| `FlashScriptDriver`` |                      | the exporter. Use it |
-|                      |                      | for pyocd, dfu-util, |
-|                      |                      | nrfutil, esptool,    |
-|                      |                      | STM32CubeProgrammer, |
-|                      |                      | J-Link Commander and |
-|                      |                      | other vendor tools.  |
-|                      |                      | Tested with          |
-|                      |                      | STM32CubeProgrammer  |
-|                      |                      | and esptool, see     |
-|                      |                      | below.               |
-+----------------------+----------------------+----------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - Driver
+     - Tool on the exporter
+     - Notes
+   * - ``OpenOCDDriver``
+     - openocd 0.11 or newer
+     - Works for ST-Link, CMSIS-DAP and J-Link probes that OpenOCD supports.
+       It selects the probe by its USB path, so several probes on one
+       exporter are fine. Tested.
+   * - ``FlashScriptDriver``
+     - anything
+     - Runs your script on the exporter. Use it for pyocd, dfu-util, nrfutil,
+       esptool, STM32CubeProgrammer, J-Link Commander and other vendor tools.
+       Tested with STM32CubeProgrammer, esptool and J-Link Commander.
 
 The image file is copied to the exporter by labgrid before the tool runs,
 so the tool only needs to exist on the exporter.
@@ -348,7 +341,6 @@ The result looks like this.
        - --env=/shared/labgrid-envs/stm32f7/labgrid.yaml
        - --acquire
        - --acquire-wait=300
-       - --wait-console=30
      serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-envs/stm32f7/labgrid.yaml,--acquire,--acquire-wait=300"
      flash_timeout: 360
 
