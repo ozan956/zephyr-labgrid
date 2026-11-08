@@ -45,9 +45,11 @@ class FakeItem:
 
 @pytest.fixture
 def rfc2217_class(monkeypatch):
-    """A fresh copy of serial.rfc2217.Serial so patches do not leak."""
+    """A fresh copy of serial.rfc2217.Serial so patches do not leak. The
+    ports of the tests are never opened, so closing them on garbage
+    collection must do nothing."""
     import serial.rfc2217
-    cls = type('Serial', (serial.rfc2217.Serial,), {})
+    cls = type('Serial', (serial.rfc2217.Serial,), {'__del__': lambda self: None})
     monkeypatch.setattr(serial.rfc2217, 'Serial', cls)
     return cls
 

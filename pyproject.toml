@@ -36,3 +36,5 @@ select = ["E", "F", "W", "B", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# an exception in __del__ must fail the test, as it does on some Python versions
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
