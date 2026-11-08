@@ -5,7 +5,8 @@
 #
 # {device.devnode} is the tty on the exporter (USBFlashableDevice matched on
 # SUBSYSTEM tty), {address} is the flash offset the runner reads from the
-# build (CONFIG_FLASH_LOAD_OFFSET), {image} the copied zephyr.bin.
+# build (the boot partition of the devicetree for Espressif SoCs), {image}
+# the copied zephyr.bin.
 images:
   flash-script: esptool-flash.sh
 targets:

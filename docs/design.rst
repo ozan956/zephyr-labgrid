@@ -155,8 +155,9 @@ The tools on one host coordinate through a lock directory.
    $TMPDIR/zephyr-labgrid-<uid>/<coordinator>-<place>/
      lock                 flock() while talking to the coordinator
      <pid>.pid            one per running tool that uses the place
-     acquired-by-tools    present while a tool holds the place
-     console-<pid>.ready  labgrid-pty has the console open
+     acquired-by-tools       present while a tool holds the place
+     console-<pid>.starting  labgrid-pty is opening the console
+     console-<pid>.ready     labgrid-pty has the console open
 
 The first tool acquires and writes the marker. Every tool registers its
 pid. The last tool to exit releases. Without the marker (place acquired by
@@ -252,4 +253,4 @@ Not there yet
    labgrid's ``OpenOCDDriver`` and port forwarding to the client. Planned as
    a labgrid contribution, and the runner will use it when it lands.
 -  A real serial port for the pytest ``mcumgr`` fixture, several console
-   UARTs per place, waiting for a busy place, ``--erase``.
+   UARTs per place, ``--erase``.
