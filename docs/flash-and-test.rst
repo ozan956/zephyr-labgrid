@@ -187,7 +187,7 @@ Runner options after ``--``.
    * - ``--file FILE``, ``--file-type TYPE``
      - flash another file than the build output
    * - ``--timeout SECONDS``
-     - time limit for labgrid resources and flash scripts
+     - time limit for the flash or reset script of the environment
    * - ``--wait-console SECONDS``
      - wait for a ``labgrid-pty`` on this machine to open the console before
        flashing. By default the runner waits only when one is starting, as

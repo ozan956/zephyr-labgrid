@@ -92,7 +92,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                             help='power cycle the place before flashing '
                                  '(needs a PowerProtocol driver)')
         parser.add_argument('--timeout', type=float, default=None,
-                            help='override labgrid resource wait timeout')
+                            help='time limit for the flash or reset script of the '
+                                 'environment')
         # Not for users: hardware maps from labgrid-twister-hwmap pass it, so
         # that Twister acquires each place for a test and releases it after.
         parser.add_argument('--acquire', action='store_true', help=argparse.SUPPRESS)
@@ -403,8 +404,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                     power.cycle()
 
                 flasher, kind = self._get_flasher(target)
-                if self.timeout is not None and hasattr(flasher, 'interface'):
-                    flasher.interface.timeout = self.timeout
                 if kind == 'bootstrap':
                     flasher.load(image)
                 else:
