@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
+import time
 
 import pytest
 
@@ -412,11 +413,21 @@ def test_console_starting_marker(lock_dir):
     assert not common.console_expected('p', 'c:1')
 
 
-def test_twister_with_a_map_does_not_flash_after_the_console():
+def sleeper(*args):
+    """A process with the given command line, once it shows in /proc."""
     import subprocess
     import sys
-    p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)',
-                          'scripts/twister', '--hardware-map', 'map.yml'])
+    p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', *args])
+    for _ in range(100):
+        with open(f'/proc/{p.pid}/cmdline', 'rb') as f:
+            if f.read().split(b'\0')[3:-1] == [a.encode() for a in args]:
+                return p
+        time.sleep(0.02)
+    raise RuntimeError('child did not start')
+
+
+def test_twister_with_a_map_does_not_flash_after_the_console():
+    p = sleeper('scripts/twister', '--hardware-map', 'map.yml')
     try:
         assert common.started_by_twister(p.pid)
         assert not common.twister_flashes_after_console(p.pid)
@@ -426,13 +437,9 @@ def test_twister_with_a_map_does_not_flash_after_the_console():
 
 
 def test_started_by_twister(tmp_path):
-    import subprocess
-    import sys
-    code = 'import time; time.sleep(30)'
-    procs = [subprocess.Popen([sys.executable, '-c', code] + extra)
-             for extra in (['scripts/twister', '-p', 'b'],
-                           ['scripts/twister', '--flash-before'],
-                           ['west', 'build'])]
+    procs = [sleeper(*extra) for extra in (['scripts/twister', '-p', 'b'],
+                                           ['scripts/twister', '--flash-before'],
+                                           ['west', 'build'])]
     try:
         assert [common.started_by_twister(p.pid) for p in procs] == [True, False, False]
         assert [common.twister_flashes_after_console(p.pid) for p in procs] == [
