@@ -6,12 +6,7 @@ Intended as Twister's ``serial_pty`` script (and the pytest-twister-harness
 talks to it as if it were a serial port. We forward everything to the
 console driver of the labgrid target.
 
-Usage: labgrid-pty [-e ENV] [-p PLACE] [-l LOGFILE] [--reset-rts]
-  PLACE defaults to $LG_PLACE, then to the place you hold for
-        $TWISTER_PLATFORM (Twister sets it), then to the one place you
-        hold. The place must be acquired by you.
-  ENV   defaults to $ZEPHYR_LABGRID_ENV (then $LG_ENV, then the zephyr_env
-        tag of the place, relative to --env-dir/$ZEPHYR_LABGRID_ENV_DIR)
+The place must be acquired by you.
 
 Exit codes: 0 on stdin EOF or SIGTERM, 1 on a labgrid error, 2 on usage.
 """

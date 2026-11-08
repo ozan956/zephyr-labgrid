@@ -17,11 +17,6 @@ Tags read from the place:
   zephyr_reset_rts  true/false; labgrid-pty pulses RTS after connecting, for
                     boards whose reset line is wired to RTS.
 
-Usage:
-  labgrid-twister-hwmap [-x COORDINATOR] [-p PLATFORM]... [--place NAME]...
-                        [--env FILE] [--env-dir DIR]
-                        [--wait SECONDS] [--pty NAME] [-o hwmap.yaml]
-
 Write the map once, like twister --generate-hardware-map for boards on the
 desk, and run Twister with it as usual. Each test acquires its place when
 it starts and releases it when it ends; a place you hold already stays

@@ -320,22 +320,8 @@ def purge_was_broken():
 # ---------------------------------------------------------------------------
 # Place locks through labgrid-client
 #
-# Acquire and release go through the labgrid-client command instead of the
-# client API so that this process keeps a single coordinator session (the
-# one labgrid opens for RemotePlace; the coordinator accepts one session per
-# process). labgrid-client is installed together with the labgrid package;
-# when it is not on PATH we run the same entry point with the current
-# interpreter.
-#
-# Twister starts labgrid-pty and west flash at the same time for boards
-# that are flashed while the console is open. Both may carry --acquire, so
-# the tools on one host coordinate through a small lock directory:
-#   <tmp>/zephyr-labgrid-<uid>/<coordinator>-<place>/
-#     lock               flock() while talking to the coordinator
-#     <pid>.pid          one file per running tool that uses the place
-#     acquired-by-tools  present while a tool holds the place
-# The first tool acquires the place, the last tool to exit releases it. A
-# place that the user acquired by hand (no marker file) is never released.
+# Used by the hidden --acquire of hardware maps. The runner and labgrid-pty
+# of a test share the place through a lock directory, see docs/design.rst.
 # ---------------------------------------------------------------------------
 
 class PlaceLockError(RuntimeError):

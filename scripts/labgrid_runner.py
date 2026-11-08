@@ -110,10 +110,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def do_create(cls, cfg: RunnerConfig, args):
-        # ZEPHYR_LABGRID_ENV is preferred over LG_ENV: LG_ENV also activates
-        # labgrid's own pytest plugin inside pytest-twister-harness runs.
-        # Without either, the zephyr_env tag of the place is looked up in
-        # do_run, so that creating the runner never talks to the coordinator.
+        # Without an environment file, do_run takes it from the place tags,
+        # so that creating the runner never talks to the coordinator.
         env_file = args.env or common.default_env()
         # Without a place, do_run picks the one the user holds for this board.
         place = args.dev_id or common.default_place()
@@ -301,7 +299,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         if self.acquire:
             log(f'would acquire place {self.place} and release it when west exits')
         if command == 'reset':
-            log('would reset via ResetProtocol, PowerProtocol or OpenOCD')
+            log('would reset via ResetProtocol, the reset script, PowerProtocol or '
+                'OpenOCD')
             return
         if self.wait_console is None:
             log('would wait for labgrid-pty when one is starting')
@@ -316,8 +315,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     def do_run(self, command, **kwargs):
         try:
-            from labgrid import Environment
-            from labgrid.exceptions import NoDriverFoundError, NoResourceFoundError
+            import labgrid  # noqa: F401
         except ImportError as e:
             raise RuntimeError('labgrid runner needs the labgrid python package '
                                'in the environment running west') from e
@@ -349,8 +347,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
         if command == 'flash':
             self._wait_for_console()
-        self._run_on_target(command, image, Environment, NoDriverFoundError,
-                            NoResourceFoundError)
+        self._run_on_target(command, image)
 
     def _wait_for_console(self):
         """Twister starts labgrid-pty and west flash at the same time, and
@@ -373,8 +370,10 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             self.logger.warning(f'no console bridge for place {self.place} '
                                 f'after {timeout:g} s, flashing anyway')
 
-    def _run_on_target(self, command, image, Environment, NoDriverFoundError,
-                       NoResourceFoundError):
+    def _run_on_target(self, command, image):
+        from labgrid import Environment
+        from labgrid.exceptions import NoDriverFoundError, NoResourceFoundError
+
         # labgrid environment files refer to the place as !template $LG_PLACE.
         # Restore the variable afterwards: west runs the runner once per
         # sysbuild image in one process, and the next image may have another

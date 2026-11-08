@@ -5,9 +5,6 @@ Goes through the things that usually go wrong on a new setup and prints one
 line per check: ``ok``, ``warn`` or ``FAIL``. Exit code 1 when a check
 failed.
 
-Usage: labgrid-twister-check [-x COORDINATOR] [-e ENV] [-p PLACE]
-                             [--tool NAME ...] [--hwmap FILE] [--no-console]
-
 Checks:
   python      labgrid, pyserial-labgrid and PyYAML importable
   path        labgrid-pty and labgrid-client on PATH
