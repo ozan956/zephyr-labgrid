@@ -69,11 +69,11 @@ def test_place_without_platform_gives_no_entry(place_info):
     assert hwmap.make_entry('p', place_info(), parse([])) is None
 
 
-def test_force_env_overrides_tag(tmp_path, place_info):
+def test_env_overrides_tag(tmp_path, place_info):
     forced = tmp_path / 'forced.yaml'
     forced.write_text('')
     place = place_info('x/y', zephyr_env='/other.yaml')
-    entry = hwmap.make_entry('p', place, parse(['--force-env', str(forced)]))
+    entry = hwmap.make_entry('p', place, parse(['--env', str(forced)]))
     assert f'--env={forced}' in entry['runner_params']
 
 

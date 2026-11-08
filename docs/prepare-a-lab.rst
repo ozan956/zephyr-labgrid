@@ -321,10 +321,10 @@ tags of step 2.
    $ labgrid-twister-hwmap -x lab-coordinator:20408 --env-dir /shared/labgrid-envs -o hwmap.yaml
 
 It reads the tags from the table in step 2 and skips places without
-``zephyr_platform``. ``--env FILE`` is the fallback for places without a
-``zephyr_env`` tag, ``--force-env FILE`` overrides the tag for every place,
-and ``-p PLATFORM`` or ``--place NAME`` limit the map to some places.
-``--env-dir`` defaults to ``$ZEPHYR_LABGRID_ENV_DIR``.
+``zephyr_platform``. It finds the environment files as the runner does, so
+``--env FILE`` sets one file for every place, and ``-p PLATFORM`` or
+``--place NAME`` limit the map to some places. ``--env-dir`` defaults to
+``$ZEPHYR_LABGRID_ENV_DIR``.
 
 Every entry makes a test take its place when it starts and give it back
 when it ends, so users run Twister with the map without holding the places.

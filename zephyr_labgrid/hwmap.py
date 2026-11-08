@@ -19,7 +19,7 @@ Tags read from the place:
 
 Usage:
   labgrid-twister-hwmap [-x COORDINATOR] [-p PLATFORM]... [--place NAME]...
-                        [--env FILE] [--env-dir DIR] [--force-env FILE]
+                        [--env FILE] [--env-dir DIR]
                         [--wait SECONDS] [--pty NAME] [-o hwmap.yaml]
 
 Write the map once, like twister --generate-hardware-map for boards on the
@@ -62,16 +62,13 @@ def build_parser():
                              'board target, may be repeated')
     parser.add_argument('--place', action='append', default=[],
                         help='only this place, may be repeated')
-    parser.add_argument('--env', default=os.environ.get('ZEPHYR_LABGRID_ENV'),
-                        help='labgrid environment file used when a place has no '
-                             'zephyr_env tag (default $ZEPHYR_LABGRID_ENV)')
-    parser.add_argument('--force-env', default=None, metavar='FILE',
-                        help='use this environment file for every place and '
-                             'ignore zephyr_env tags')
-    parser.add_argument('--env-dir', default=common.default_env_dir(),
+    parser.add_argument('--env', default=None,
+                        help='labgrid environment file for every place, in the same '
+                             'order as the runner (default $ZEPHYR_LABGRID_ENV, then '
+                             '$LG_ENV, then the zephyr_env tag of each place)')
+    parser.add_argument('--env-dir', default=None,
                         help='directory for relative zephyr_env tag values '
-                             '(default $ZEPHYR_LABGRID_ENV_DIR, else the directory '
-                             'of --env)')
+                             '(default $ZEPHYR_LABGRID_ENV_DIR)')
     parser.add_argument('--pty', default='labgrid-pty',
                         help='console bridge command (default: labgrid-pty from PATH)')
     parser.add_argument('--wait-console', type=float, default=None, metavar='SECONDS',
@@ -85,19 +82,13 @@ def build_parser():
     return parser
 
 
-def resolve_env(name, place_tags, args):
-    """Environment file for a place, absolute. Raises SystemExit with a
-    message when it can not be decided."""
-    env = args.force_env or place_tags.get('zephyr_env') or args.env
-    if not env:
-        sys.exit(f'{PROG}: place {name} has no zephyr_env tag and no --env given')
-    if not os.path.isabs(env):
-        env_dir = args.env_dir or (os.path.dirname(os.path.abspath(args.env))
-                                   if args.env else None)
-        if env_dir is None:
-            sys.exit(f'{PROG}: zephyr_env tag of {name} is the relative path '
-                     f'"{env}"; set ZEPHYR_LABGRID_ENV_DIR or give --env-dir')
-        env = os.path.join(env_dir, env)
+def env_file(name, tags, args):
+    """Environment file of a place, absolute, found as the runner finds it.
+    Raises SystemExit with a message when there is none."""
+    try:
+        env = common.resolve_env(args.env, name, env_dir=args.env_dir, tags=tags)
+    except ValueError as e:
+        sys.exit(f'{PROG}: {e}')
     return os.path.abspath(env)
 
 
@@ -108,7 +99,7 @@ def make_entry(name, place, args):
     platform = tags.get('zephyr_platform')
     if not platform:
         return None
-    env = resolve_env(name, tags, args)
+    env = env_file(name, tags, args)
     if not os.path.isfile(env):
         print(f'warning: environment file {env} for place {name} does not exist',
               file=sys.stderr)
