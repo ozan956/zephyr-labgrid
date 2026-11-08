@@ -23,6 +23,7 @@ def test_reset_rts_pulses_rts_with_dtr_low(monkeypatch):
 
 def test_interactive_only_for_a_person_at_a_terminal(monkeypatch):
     import os
+
     from zephyr_labgrid import common
     r, w = os.pipe()
     assert not pty.interactive(r)           # a pipe, as from sleep 60 | labgrid-pty
