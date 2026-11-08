@@ -46,7 +46,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     """Flash a Zephyr image through a labgrid place."""
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
-                 power_cycle=False, reset=False, timeout=None, acquire=False, acquire_wait=0.0,
+                 power_cycle=False, timeout=None, acquire=False, acquire_wait=0.0,
                  wait_console=None, env_dir=None, ignore_platform=False):
         super().__init__(cfg)
         self.env_file = env_file
@@ -54,7 +54,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.place = place
         self.driver_name = driver_name
         self.power_cycle = power_cycle
-        self.reset = reset
         self.timeout = timeout
         self.acquire = acquire
         self.acquire_wait = acquire_wait
@@ -67,8 +66,10 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def capabilities(cls):
-        return RunnerCaps(commands={'flash', 'reset'}, dev_id=True, reset=True,
-                          file=True, dry_run=True)
+        # No reset=True: west would then add --reset to every flash, and the
+        # flashers reset the board themselves.
+        return RunnerCaps(commands={'flash', 'reset'}, dev_id=True, file=True,
+                          dry_run=True)
 
     @classmethod
     def dev_id_help(cls) -> str:
@@ -106,7 +107,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                  'to have the console of the place open before '
                                  'flashing. Default: wait when one is starting, as '
                                  'under Twister. 0 never waits')
-        parser.set_defaults(reset=False)
 
     @classmethod
     def do_create(cls, cfg: RunnerConfig, args):
@@ -119,7 +119,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                      env_dir=args.env_dir,
                                      driver_name=args.driver,
                                      power_cycle=args.power_cycle,
-                                     reset=args.reset, timeout=args.timeout,
+                                     timeout=args.timeout,
                                      acquire=args.acquire,
                                      acquire_wait=args.acquire_wait,
                                      wait_console=args.wait_console,
@@ -186,14 +186,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             args.append(remote_image)
         drv.flash(args=args, timeout=self.timeout)
 
-    def _reset_target(self, target, required=False):
+    def _reset_target(self, target):
         """Reset through ResetProtocol, then a FlashScriptDriver named
-        "reset", then PowerProtocol, then OpenOCD.
-
-        After flashing this is best effort: without a reset driver the
-        flasher is expected to have reset the board (e.g. OpenOCD 'reset
-        run'). For ``west reset`` (``required``) no way to reset is an error.
-        """
+        "reset", then PowerProtocol, then OpenOCD."""
         from labgrid.driver import FlashScriptDriver
         from labgrid.exceptions import NoDriverFoundError
 
@@ -234,11 +229,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             drv.execute(['init', 'reset run', 'shutdown'])
             target.deactivate(drv)
             return
-        if required:
-            raise RuntimeError(f'can not reset place "{self.place}": {self.env_file} has '
-                               'no ResetProtocol, reset script, PowerProtocol or OpenOCD '
-                               'driver')
-        self.logger.info('no reset/power driver on target, relying on flasher reset')
+        raise RuntimeError(f'can not reset place "{self.place}": {self.env_file} has '
+                           'no ResetProtocol, reset script, PowerProtocol or OpenOCD '
+                           'driver')
 
     def _board(self):
         conf = self.build_conf
@@ -310,8 +303,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             log('would power cycle the place first')
         driver = self.driver_name or 'the BootstrapProtocol driver, else FlashScriptDriver'
         log(f'would flash {self._image()} with {driver}')
-        if self.reset:
-            log('would reset the target afterwards')
 
     def do_run(self, command, **kwargs):
         try:
@@ -395,7 +386,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         try:
             try:
                 if command == 'reset':
-                    self._reset_target(target, required=True)
+                    self._reset_target(target)
                     return
 
                 if self.power_cycle:
@@ -412,9 +403,6 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                 else:
                     self._flash_with_script(flasher, image)
                 target.deactivate(flasher)
-
-                if self.reset:
-                    self._reset_target(target)
             except NoResourceFoundError as e:
                 raise RuntimeError(
                     f'labgrid place "{self.place}" has no matching resource: {e}. '

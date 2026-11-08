@@ -44,7 +44,8 @@ def test_name_and_caps(runner_mod):
     assert cls.name() == 'labgrid'
     caps = cls.capabilities()
     assert caps.commands == {'flash', 'reset'}
-    assert caps.dev_id and caps.reset and caps.file and caps.dry_run
+    assert caps.dev_id and caps.file and caps.dry_run
+    assert not caps.reset       # west would add --reset to every flash
 
 
 def test_create_from_arguments(runner_mod, runner_config, clean_env):
@@ -53,7 +54,7 @@ def test_create_from_arguments(runner_mod, runner_config, clean_env):
                 '--driver', 'Flash', '--timeout', '7', '--ignore-platform'])
     assert (r.place, r.env_file, r.wait_console) == ('p1', '/e.yaml', 5.0)
     assert r.ignore_platform and not r.acquire
-    assert (r.driver_name, r.timeout, r.reset) == ('Flash', 7.0, False)
+    assert (r.driver_name, r.timeout) == ('Flash', 7.0)
 
 
 def test_create_from_environment(runner_mod, runner_config, clean_env, monkeypatch):
@@ -381,6 +382,14 @@ def test_reset_command_uses_reset_protocol(runner, monkeypatch):
     fake_environment(monkeypatch, target)
     runner.do_run('reset')
     assert rst.count == 1 and not boot.loaded and target.cleaned
+
+
+def test_flash_does_not_reset(runner, monkeypatch):
+    rst = FakeReset()
+    boot = FakeBootstrap()
+    fake_environment(monkeypatch, FakeTarget({'ResetProtocol': rst, 'BootstrapProtocol': boot}))
+    runner.do_run('flash')
+    assert len(boot.loaded) == 1 and rst.count == 0
 
 
 def test_reset_command_falls_back_to_openocd(runner, monkeypatch):

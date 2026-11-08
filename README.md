@@ -75,7 +75,7 @@ To make plain `west flash` use the lab, build with
 
 | | |
 |---|---|
-| `west flash` (`--file`, `--reset`, `--dry-run`, sysbuild) | yes |
+| `west flash` (`--file`, `--dry-run`, sysbuild) | yes |
 | `west reset` | yes (ResetProtocol, a reset script, PowerProtocol or OpenOCD) |
 | `west debug`, `debugserver`, `attach`, `rtt` | not yet, needs OpenOCD gdb server support in labgrid, planned |
 | `--erase` | no |

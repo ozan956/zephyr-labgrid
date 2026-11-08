@@ -139,6 +139,9 @@ the serial number, and ``{device.devnode}``, the device node.
            script: flash-script
            args: ["{device.path}", "{image}"]
 
+End the script with a reset of the board, as the example scripts do. The
+runner does not reset the board after flashing.
+
 labgrid runs the script over ssh with a small ``PATH``. Install the tool
 on that ``PATH``, or let the script look for it in the usual places, as the
 example scripts do.

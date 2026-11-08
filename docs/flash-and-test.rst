@@ -212,8 +212,6 @@ Runner options after ``--``.
      - labgrid driver to flash with, when the environment has more than one
    * - ``--power-cycle``
      - power cycle the place before flashing (needs a PowerProtocol driver)
-   * - ``--reset`` / ``--no-reset``
-     - reset after flashing
    * - ``--file FILE``, ``--file-type TYPE``
      - flash another file than the build output
    * - ``--timeout SECONDS``
