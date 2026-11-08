@@ -54,7 +54,7 @@ def test_place_from_twister_platform(clean_env, monkeypatch, place_info):
     pty.resolve_place(args)
     assert (args.place, args.env) == ('esp', '/e.yaml')
     assert not args.reset_rts
-    places['esp']['tags']['zephyr_pty_args'] = '--reset-rts'
+    places['esp']['tags']['zephyr_reset_rts'] = 'true'
     pty.resolve_place(args)
     assert args.reset_rts                   # from the tag of the place
 

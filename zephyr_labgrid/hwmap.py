@@ -14,8 +14,8 @@ Tags read from the place:
   zephyr_flash_before   true/false; flash before opening the console. Needed
                     when the console port is also the flash port (ESP32 with a
                     USB-UART bridge).
-  zephyr_pty_args   comma separated extra arguments for labgrid-pty, e.g.
-                    --reset-rts for boards whose reset line is wired to RTS.
+  zephyr_reset_rts  true/false; labgrid-pty pulses RTS after connecting, for
+                    boards whose reset line is wired to RTS.
 
 Usage:
   labgrid-twister-hwmap [-x COORDINATOR] [-p PLATFORM]... [--place NAME]...
@@ -38,14 +38,9 @@ import yaml
 from . import common
 
 PROG = 'labgrid-twister-hwmap'
-TRUE_WORDS = ('1', 'true', 'yes', 'on')
 DEFAULT_WAIT = 300
 # Twister's default --device-flash-timeout, for places without the tag
 TWISTER_FLASH_TIMEOUT = 60
-
-
-def tag_is_true(value):
-    return str(value or '').strip().lower() in TRUE_WORDS
 
 
 def split_list(value):
@@ -104,7 +99,7 @@ def make_entry(name, place, args):
         print(f'warning: environment file {env} for place {name} does not exist',
               file=sys.stderr)
 
-    flash_before = tag_is_true(tags.get('zephyr_flash_before'))
+    flash_before = common.tag_is_true(tags.get('zephyr_flash_before'))
     # --acquire: the runner and labgrid-pty of a test acquire the place
     # together and the last of them releases it.
     lock = ['--acquire'] + ([f'--acquire-wait={args.wait:g}'] if args.wait > 0 else [])
@@ -115,7 +110,10 @@ def make_entry(name, place, args):
         runner_params.append('--wait-console=0')
     elif args.wait_console is not None:
         runner_params.append(f'--wait-console={args.wait_console:g}')
-    pty = [args.pty, '-p', name, '-e', env] + split_list(tags.get('zephyr_pty_args')) + lock
+    pty = [args.pty, '-p', name, '-e', env]
+    if common.tag_is_true(tags.get('zephyr_reset_rts')):
+        pty.append('--reset-rts')
+    pty += lock
     entry = {
         'connected': True,
         'id': name,

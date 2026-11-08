@@ -1,6 +1,6 @@
 # Twister hardware map for an ESP32-DevKitC behind labgrid.
 # labgrid-twister-hwmap writes the same entry from the tags
-# zephyr_platform, zephyr_env, zephyr_flash_before and zephyr_pty_args.
+# zephyr_platform, zephyr_env, zephyr_flash_before and zephyr_reset_rts.
 #
 # flash_before: esptool uses the console UART, so the console is opened
 # after flashing. --reset-rts then reboots the board into the open console.

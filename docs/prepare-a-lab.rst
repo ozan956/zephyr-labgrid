@@ -93,10 +93,10 @@ labgrid itself ignores these tags. The zephyr-labgrid tools read them.
    * - ``zephyr_flash_before``
      - hwmap
      - ``true`` when the console port is also the flash port (step 3)
-   * - ``zephyr_pty_args``
+   * - ``zephyr_reset_rts``
      - ``labgrid-pty``, hwmap
-     - comma separated extra ``labgrid-pty`` arguments, for example
-       ``--reset-rts``
+     - ``true`` when the reset line of the board is wired to RTS, as on ESP32
+       dev kits. ``labgrid-pty`` then resets the board after connecting.
    * - ``zephyr_flash_timeout``
      - hwmap
      - seconds for one flash. Without it Twister's
@@ -241,7 +241,7 @@ lines drive boot mode and reset. Three things follow.
    ``zephyr_flash_before=true``. Twister then flashes first and opens the
    console afterwards.
 -  After the console is opened the board has already booted, so the banner
-   would be lost. Tag the place with ``zephyr_pty_args=--reset-rts``.
+   would be lost. Tag the place with ``zephyr_reset_rts=true``.
    ``labgrid-pty`` then pulses RTS over RFC2217 right after connecting and the
    board boots again into the open console.
 

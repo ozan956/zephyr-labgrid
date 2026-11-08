@@ -49,9 +49,9 @@ def test_without_wait_the_flash_timeout_is_twisters(env_file, place_info):
     assert entry['flash_timeout'] == 60 + 300
 
 
-def test_flash_before_and_pty_args(env_file, place_info):
+def test_flash_before_and_reset_rts(env_file, place_info):
     place = place_info('esp32_devkitc/esp32/procpu', zephyr_flash_before='true',
-                       zephyr_pty_args='--reset-rts')
+                       zephyr_reset_rts='true')
     entry = hwmap.make_entry('esp-1', place, parse(['--env', str(env_file)]))
     assert entry['flash_before'] is True
     # the console opens after flashing: nothing to wait for

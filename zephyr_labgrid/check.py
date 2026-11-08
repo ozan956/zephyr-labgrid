@@ -433,7 +433,7 @@ def check_hwmap(rep, path, session, pty_default):
             if place.acquired and place.acquired != whoami():
                 rep.warn(f'{label}: place acquired by {place.acquired}')
             if entry.get('flash_before') != (
-                    place.tags.get('zephyr_flash_before', '').lower() in ('1', 'true', 'yes')):
+                    common.tag_is_true(place.tags.get('zephyr_flash_before'))):
                 if place.tags.get('zephyr_flash_before'):
                     rep.warn(f'{label}: flash_before differs from the zephyr_flash_before tag')
 

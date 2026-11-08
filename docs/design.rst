@@ -82,7 +82,8 @@ without qualifiers fits every target of the board. With a place it checks
 the owner and that the tag fits the build, unless ``--ignore-platform``.
 ``labgrid-pty`` takes the place of the user for ``$TWISTER_PLATFORM``, which
 Twister sets for the ``serial_pty`` command, or else the one place of the
-user. It also applies ``--reset-rts`` from the ``zephyr_pty_args`` tag.
+user. It also resets the board through RTS when the place has the
+``zephyr_reset_rts`` tag.
 
 Neither tool acquires a place for a user. Only hardware maps make them do
 it, see the place locks below.

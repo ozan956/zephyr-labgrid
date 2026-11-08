@@ -82,6 +82,14 @@ def place_tags(place, coordinator=None):
     return places[place]['tags']
 
 
+TRUE_WORDS = ('1', 'true', 'yes', 'on')
+
+
+def tag_is_true(value):
+    """A place tag used as a flag, like zephyr_flash_before=true."""
+    return str(value or '').strip().lower() in TRUE_WORDS
+
+
 def whoami():
     """The owner name labgrid-client uses for this user, ``host/user``."""
     host = os.environ.get('LG_HOSTNAME') or socket.gethostname()
