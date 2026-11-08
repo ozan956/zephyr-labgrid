@@ -6,19 +6,27 @@
 #
 # The board needs an ATOC that boots M55_HP from 0x80000000, written once
 # with SETOOLS, see zephyr-hp.json.
+#
+# The FlashScriptDriver named "reset" is what west reset -r labgrid runs.
 images:
   flash-script: jlink-flash.sh
+  reset-script: jlink-reset.sh
 targets:
   main:
     resources:
       RemotePlace:
         name: !template $LG_PLACE
     drivers:
-      SerialDriver: {}
-      FlashScriptDriver:
-        script: flash-script
-        args:
-          - "{device.path}"
-          - "{address}"
-          - "{image}"
-          - "AE822FA0E5597LS0_M55_HP"
+      - SerialDriver: {}
+      - FlashScriptDriver:
+          script: flash-script
+          args:
+            - "{device.path}"
+            - "{address}"
+            - "{image}"
+            - "AE822FA0E5597LS0_M55_HP"
+      - FlashScriptDriver:
+          name: reset
+          script: reset-script
+          args:
+            - "{device.path}"
