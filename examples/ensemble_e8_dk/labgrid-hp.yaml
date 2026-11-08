@@ -9,8 +9,7 @@
 #
 # The FlashScriptDriver named "reset" is what west reset -r labgrid runs.
 images:
-  flash-script: jlink-flash.sh
-  reset-script: jlink-reset.sh
+  jlink: jlink.sh
 targets:
   main:
     resources:
@@ -19,14 +18,16 @@ targets:
     drivers:
       - SerialDriver: {}
       - FlashScriptDriver:
-          script: flash-script
+          script: jlink
           args:
+            - "flash"
             - "{device.path}"
             - "{address}"
             - "{image}"
             - "AE822FA0E5597LS0_M55_HP"
       - FlashScriptDriver:
           name: reset
-          script: reset-script
+          script: jlink
           args:
+            - "reset"
             - "{device.path}"

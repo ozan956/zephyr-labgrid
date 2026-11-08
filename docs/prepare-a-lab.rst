@@ -281,12 +281,12 @@ above.
 -  The serial port reaches one UART at a time, set by SW4. Leave SW4 in the
    UART4 position, the console of the M55 HP core. The boot messages of the
    Secure Enclave appear on that port too, before the Zephyr banner.
--  Install the SEGGER J-Link software on the exporter. ``jlink-flash.sh``
+-  Install the SEGGER J-Link software on the exporter. ``jlink.sh``
    looks for ``JLinkExe`` on ``PATH``, in ``/opt/SEGGER/JLink`` and in
    ``~/opt/SEGGER-JLink``.
--  A core reset does not start the new image. ``jlink-flash.sh`` pulls the
+-  A core reset does not start the new image. ``jlink.sh`` pulls the
    reset pin after writing, so the Secure Enclave restarts and boots it.
-   ``jlink-reset.sh``, the reset script of the environment, does the same
+   Its ``reset`` mode, the reset script of the environment, does the same
    for ``west reset``.
 
 Export the J-Link twice, as ``USBFlashableDevice`` for the flash script and
