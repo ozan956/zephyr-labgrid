@@ -71,7 +71,7 @@ To make plain `west flash` use the lab, build with
 | | |
 |---|---|
 | `west flash` (`--file`, `--reset`, `--dry-run`, sysbuild) | yes |
-| `west reset` | yes (ResetProtocol, PowerProtocol or OpenOCD) |
+| `west reset` | yes (ResetProtocol, a reset script, PowerProtocol or OpenOCD) |
 | `west debug`, `debugserver`, `attach`, `rtt` | not yet, needs OpenOCD gdb server support in labgrid, planned |
 | `--erase` | no |
 | Flash drivers | `OpenOCDDriver`, other `BootstrapProtocol` drivers, any tool through `FlashScriptDriver` (pyocd, dfu-util, nrfutil, esptool, J-Link, ...) |

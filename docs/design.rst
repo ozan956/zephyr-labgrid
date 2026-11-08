@@ -124,8 +124,12 @@ loads the environment and picks the flasher. That is the driver named by
 The flash driver is deactivated right after loading so the probe is free.
 
 Reset (``west reset``, and ``--reset`` after flashing) tries ResetProtocol,
-then PowerProtocol (``cycle``), then ``OpenOCDDriver.execute(['init', 'reset run', 'shutdown'])``. After flashing a missing reset driver is not an error,
-for ``west reset`` it is.
+then the ``FlashScriptDriver`` named ``reset``, then PowerProtocol
+(``cycle``), then ``OpenOCDDriver.execute(['init', 'reset run', 'shutdown'])``.
+After flashing a missing reset driver is not an error, for ``west reset`` it
+is. The reset script runs with its own ``args``, without an image. Because
+of it an environment may have two FlashScriptDrivers, and the flasher is
+then the one that is not named ``reset``.
 
 West does not apply ``--dry-run`` itself, so the runner reads it in ``do_create``
 and then only logs what it would do, without contacting the coordinator

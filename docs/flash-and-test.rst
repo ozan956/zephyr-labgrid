@@ -201,8 +201,9 @@ The runner flashes ``zephyr.hex`` if it exists, else ``zephyr.bin``, else
 ``FlashScriptDriver`` that runs a vendor tool on the exporter. Pick one
 with ``--driver`` if the file has both.
 
-``west reset`` uses a ResetProtocol driver, else a PowerProtocol driver
-(power cycle), else OpenOCD (``reset run``).
+``west reset`` uses a ResetProtocol driver, else the reset script of the lab
+owner, else a PowerProtocol driver (power cycle), else OpenOCD
+(``reset run``).
 
 Sysbuild builds (MCUboot and application, several cores) are flashed one
 image after the other in one ``west flash`` call, all on the same place.

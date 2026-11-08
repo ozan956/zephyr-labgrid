@@ -209,6 +209,24 @@ driver it finds, and the runner does not touch it.
 If you add a ``PowerProtocol`` or ``ResetProtocol`` driver, ``--reset`` and
 ``--power-cycle`` start to work.
 
+When only a vendor tool can reset the board, add the command as a second
+``FlashScriptDriver`` named ``reset``, and ``west reset -r labgrid`` runs it.
+labgrid needs the list form of ``drivers`` for two drivers of the same
+class. ``examples/ensemble_e8_dk/labgrid-hp.yaml`` does this with the reset
+pin of a J-Link.
+
+.. code:: yaml
+
+   drivers:
+     - SerialDriver: {}
+     - FlashScriptDriver:
+         script: flash-script
+         args: ["{device.path}", "{address}", "{image}"]
+     - FlashScriptDriver:
+         name: reset
+         script: reset-script
+         args: ["{device.path}"]
+
 Boards flashed over the console UART (ESP32 and friends)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -268,6 +286,8 @@ above.
    ``~/opt/SEGGER-JLink``.
 -  A core reset does not start the new image. ``jlink-flash.sh`` pulls the
    reset pin after writing, so the Secure Enclave restarts and boots it.
+   ``jlink-reset.sh``, the reset script of the environment, does the same
+   for ``west reset``.
 
 Export the J-Link twice, as ``USBFlashableDevice`` for the flash script and
 as ``USBSerialPort`` for the console, both matched on its serial number.
