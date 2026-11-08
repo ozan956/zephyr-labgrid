@@ -28,8 +28,9 @@ def test_entry_from_tags(tmp_path, place_info):
     assert entry['id'] == 'disco-1'
     assert entry['platform'] == 'stm32f746g_disco/stm32f746xx'
     assert entry['runner'] == 'labgrid'
-    assert entry['runner_params'] == ['--dev-id=disco-1', f'--env={env}'] + LOCK + [
-        '--wait-console=30']
+    # no --wait-console: the runner waits when Twister opens the console first,
+    # and does not with twister --flash-before
+    assert entry['runner_params'] == ['--dev-id=disco-1', f'--env={env}'] + LOCK
     assert entry['serial_pty'] == ','.join(['labgrid-pty', '-p', 'disco-1', '-e', str(env)]
                                            + LOCK)
     assert entry['fixtures'] == ['gpio_loopback', 'i2c_bus']
@@ -58,10 +59,10 @@ def test_flash_before_and_pty_args(env_file, place_info):
     assert entry['serial_pty'].endswith(',--reset-rts,--acquire,--acquire-wait=300')
 
 
-def test_wait_console_can_be_disabled(env_file, place_info):
+def test_wait_console_can_be_set(env_file, place_info):
     entry = hwmap.make_entry('p', place_info('x/y'),
-                             parse(['--env', str(env_file), '--wait-console', '0']))
-    assert entry['runner_params'][-1] == '--wait-console=0'
+                             parse(['--env', str(env_file), '--wait-console', '20']))
+    assert entry['runner_params'][-1] == '--wait-console=20'
 
 
 def test_place_without_platform_gives_no_entry(place_info):

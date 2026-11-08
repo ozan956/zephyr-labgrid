@@ -74,10 +74,10 @@ def build_parser():
                              'of --env)')
     parser.add_argument('--pty', default='labgrid-pty',
                         help='console bridge command (default: labgrid-pty from PATH)')
-    parser.add_argument('--wait-console', type=float, default=30, metavar='SECONDS',
-                        help='runner waits this long for the console bridge before '
-                             'flashing when flash_before is false (default 30, 0 '
-                             'disables)')
+    parser.add_argument('--wait-console', type=float, default=None, metavar='SECONDS',
+                        help='how long the runner waits for the console before '
+                             'flashing (default: it waits when Twister opens the '
+                             'console first, see the runner)')
     parser.add_argument('--wait', type=float, default=DEFAULT_WAIT, metavar='SECONDS',
                         help='how long a test waits for a place that someone else '
                              f'holds (default {DEFAULT_WAIT:g}, 0 fails at once)')
@@ -118,10 +118,12 @@ def make_entry(name, place, args):
     # together and the last of them releases it.
     lock = ['--acquire'] + ([f'--acquire-wait={args.wait:g}'] if args.wait > 0 else [])
     runner_params = [f'--dev-id={name}', f'--env={env}'] + lock
-    # Twister starts labgrid-pty and west flash together unless the board is
-    # flashed first; then the flash waits until the console is open.
-    wait_console = 0 if flash_before else args.wait_console
-    runner_params.append(f'--wait-console={wait_console:g}')
+    # A board flashed before the console opens has nothing to wait for. For
+    # the others the runner decides, as it knows Twister's --flash-before.
+    if flash_before:
+        runner_params.append('--wait-console=0')
+    elif args.wait_console is not None:
+        runner_params.append(f'--wait-console={args.wait_console:g}')
     pty = [args.pty, '-p', name, '-e', env] + split_list(tags.get('zephyr_pty_args')) + lock
     entry = {
         'connected': True,
