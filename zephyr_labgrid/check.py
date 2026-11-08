@@ -6,7 +6,7 @@ line per check: ``ok``, ``warn`` or ``FAIL``. Exit code 1 when a check
 failed.
 
 Checks:
-  python      labgrid, pyserial-labgrid and PyYAML importable
+  python      labgrid importable and new enough
   path        labgrid-pty and labgrid-client on PATH
   env vars    environment file from --env, ZEPHYR_LABGRID_ENV or the zephyr_env
               tag; LG_ENV not set (pytest plugin trap)
@@ -16,7 +16,6 @@ Checks:
   exporter    flash tool found on the exporter host (--tool, openocd by default
               for OpenOCDDriver)
   console     opens, RFC2217 purge answered (ser2net 4.6.0 problem)
-  hwmap       entries match the coordinator (--hwmap)
 """
 
 import argparse
@@ -69,32 +68,25 @@ def build_parser():
     parser.add_argument('--tool', action='append', default=[], metavar='NAME',
                         help='flash tool that must exist on the exporter host, '
                              'may be repeated (default: openocd for OpenOCDDriver)')
-    parser.add_argument('--hwmap', default=None, metavar='FILE',
-                        help='Twister hardware map to check against the coordinator')
     parser.add_argument('--no-console', action='store_true',
                         help='do not open the console')
-    parser.add_argument('--pty', default='labgrid-pty',
-                        help='console bridge command that must be on PATH')
     return parser
 
 
 # -- individual checks -------------------------------------------------------
 
 def check_python(rep):
-    ok = True
-    for mod, pkg in (('labgrid', 'labgrid'), ('serial', 'pyserial-labgrid'), ('yaml', 'PyYAML')):
-        try:
-            m = __import__(mod)
-            version = getattr(m, '__version__', None) or getattr(m, 'VERSION', '')
-            rep.ok(f'python package {pkg} {version}'.rstrip())
-        except ImportError:
-            rep.fail(f'python package {pkg} is missing: pip install {pkg}')
-            ok = False
-    if ok and not labgrid_is_new_enough():
+    try:
+        import labgrid
+    except ImportError:
+        rep.fail(f'python package labgrid is missing: pip install "{LABGRID_MASTER}"')
+        return False
+    if not labgrid_is_new_enough():
         rep.fail('labgrid is too old: zephyr-labgrid needs labgrid master. '
                  f'pip install "{LABGRID_MASTER}"')
-        ok = False
-    return ok
+        return False
+    rep.ok(f'python package labgrid {getattr(labgrid, "__version__", "")}'.rstrip())
+    return True
 
 
 LABGRID_MASTER = 'labgrid @ git+https://github.com/labgrid-project/labgrid.git'
@@ -111,8 +103,8 @@ def labgrid_is_new_enough():
     return 'timeout' in inspect.signature(FlashScriptDriver.flash).parameters
 
 
-def check_path(rep, pty):
-    for name in (pty, 'labgrid-client'):
+def check_path(rep):
+    for name in ('labgrid-pty', 'labgrid-client'):
         where = shutil.which(name)
         if where:
             rep.ok(f'{name} found at {where}')
@@ -134,16 +126,6 @@ def check_env_vars(rep, args):
     if os.environ.get('LG_ENV'):
         rep.warn('LG_ENV is set. It turns on the labgrid pytest plugin inside '
                  'Twister pytest suites. Use ZEPHYR_LABGRID_ENV instead.')
-    if os.environ.get('LG_COORDINATOR'):
-        rep.ok(f'LG_COORDINATOR={os.environ["LG_COORDINATOR"]}')
-    else:
-        rep.info('LG_COORDINATOR not set: the coordinator_address of the environment '
-                 f'file, else {common.DEFAULT_COORDINATOR}')
-    extra = os.environ.get('ZEPHYR_EXTRA_MODULES', '')
-    if extra:
-        rep.ok(f'ZEPHYR_EXTRA_MODULES={extra}')
-    else:
-        rep.info('ZEPHYR_EXTRA_MODULES not set: the module must come from west.yml')
 
 
 def owned(place):
@@ -359,85 +341,10 @@ def check_console(rep, target, place):
                  '4.6.1 or newer fixes it')
     else:
         rep.ok('RFC2217 purge answered')
-    ser = getattr(console, 'serial', None)
-    if ser is not None:
-        ser.timeout = 0.5
-        try:
-            data = ser.read(max(1, ser.in_waiting))
-            rep.info(f'{len(data)} byte(s) of console output in 0.5 s')
-        except Exception as e:
-            rep.warn(f'console read failed: {e}')
     try:
         target.deactivate(console)
     except Exception:
         pass
-
-
-def check_hwmap(rep, path, session):
-    import yaml
-    try:
-        with open(path) as f:
-            entries = yaml.safe_load(f) or []
-    except Exception as e:
-        rep.fail(f'hardware map {path} does not load: {e}')
-        return
-    if not isinstance(entries, list):
-        rep.fail(f'hardware map {path} is not a list')
-        return
-    rep.ok(f'hardware map {path}: {len(entries)} entries')
-    checked_pty = set()
-    for entry in entries:
-        ident = entry.get('id')
-        label = f'hwmap {ident or "?"}'
-        if entry.get('runner') != 'labgrid':
-            rep.info(f'{label}: runner is {entry.get("runner")}, not labgrid, skipped')
-            continue
-        if not ident:
-            rep.fail('hwmap entry without id: Twister drops runner_params when id is empty')
-            continue
-        params = entry.get('runner_params') or []
-        if not any(p.startswith('--dev-id') for p in params):
-            rep.fail(f'{label}: runner_params has no --dev-id')
-        has_tag = bool(session is not None and ident in session.places
-                       and session.places[ident].tags.get('zephyr_env'))
-        if not (any(p.startswith('--env') for p in params)
-                or os.environ.get('ZEPHYR_LABGRID_ENV') or has_tag):
-            rep.fail(f'{label}: runner_params has no --env, ZEPHYR_LABGRID_ENV is not set '
-                     'and the place has no zephyr_env tag')
-        for p in params:
-            if p.startswith('--env='):
-                env = p.split('=', 1)[1]
-                if not os.path.isfile(env):
-                    rep.fail(f'{label}: environment file {env} does not exist')
-        pty = entry.get('serial_pty')
-        if not pty:
-            rep.fail(f'{label}: no serial_pty')
-        else:
-            words = [w for w in pty.replace(' ', ',').split(',') if w]
-            cmd = words[0]
-            if cmd not in checked_pty:
-                checked_pty.add(cmd)
-                if shutil.which(cmd) or os.path.isfile(cmd):
-                    rep.ok(f'serial_pty command {cmd} found')
-                else:
-                    rep.fail(f'serial_pty command {cmd} not on PATH')
-            if '--acquire' in words and entry.get('pre_script'):
-                rep.warn(f'{label}: both --acquire and pre_script lock the place')
-        if session is not None:
-            place = session.places.get(ident)
-            if place is None:
-                rep.fail(f'{label}: place {ident} does not exist on the coordinator')
-                continue
-            tag = place.tags.get('zephyr_platform')
-            if tag and tag != entry.get('platform'):
-                rep.warn(f'{label}: platform {entry.get("platform")} but tag '
-                         f'zephyr_platform={tag}')
-            if place.acquired and not owned(place):
-                rep.warn(f'{label}: place acquired by {place.acquired}')
-            if entry.get('flash_before') != (
-                    common.tag_is_true(place.tags.get('zephyr_flash_before'))):
-                if place.tags.get('zephyr_flash_before'):
-                    rep.warn(f'{label}: flash_before differs from the zephyr_flash_before tag')
 
 
 # -- main --------------------------------------------------------------------
@@ -445,7 +352,7 @@ def check_hwmap(rep, path, session):
 def run(args, rep):
     if not check_python(rep):
         return
-    check_path(rep, args.pty)
+    check_path(rep)
     check_env_vars(rep, args)
 
     coordinator = args.coordinator or common.coordinator_for_env(args.env)
@@ -463,9 +370,6 @@ def run(args, rep):
                 rep.fail(str(e))
     elif not args.place:
         rep.info('no --place/$LG_PLACE: place, resource and console checks skipped')
-
-    if args.hwmap:
-        check_hwmap(rep, args.hwmap, session)
 
     if session is not None:
         common.close_session(session)
