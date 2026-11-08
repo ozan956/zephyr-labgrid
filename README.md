@@ -6,6 +6,11 @@ The module adds a `labgrid` west runner and a `labgrid-pty` console bridge.
 The flash tool (OpenOCD, esptool, STM32CubeProgrammer, ...) runs on the
 exporter next to the board.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/pieces-dark.svg">
+  <img alt="The runner and labgrid-pty on the developer host reach the flash tool and ser2net on the exporter host. Both hosts keep a session with the labgrid coordinator." src="docs/images/pieces-light.svg">
+</picture>
+
 **This is an experimental release (0.1).** Tested with Zephyr 4.5 and labgrid master
 on an STM32F746G-DISCO (OpenOCD and STM32CubeProgrammer), an
 ESP32-DevKitC (esptool) and an Alif Ensemble E8 DevKit (J-Link), with
