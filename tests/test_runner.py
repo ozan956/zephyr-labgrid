@@ -474,3 +474,18 @@ def test_reset_command_uses_the_reset_script(runner, monkeypatch):
     runner.do_run('reset')
     assert reset.calls == [(None, None)]    # its own args, no image
     assert target.deactivated == [reset]
+
+
+def test_generated_map_needs_no_coordinator_query(runner_mod, runner_config, clean_env,
+                                                  monkeypatch, lock_dir):
+    """With --acquire, --dev-id and --env the map has decided everything."""
+    from zephyr_labgrid import common
+    monkeypatch.setattr(common, 'lab_places',
+                        lambda coordinator=None: pytest.fail('asked the coordinator'))
+    monkeypatch.setattr(common, 'run_labgrid_client',
+                        lambda args, coordinator=None: (0, 'ok'))
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': FakeBootstrap()}))
+    r = create(runner_mod, runner_config,
+               ['--dev-id', 'p', '--env', '/e.yaml', '--acquire', '--wait-console', '0'])
+    r.do_run('flash')
+    common.release_process_places()

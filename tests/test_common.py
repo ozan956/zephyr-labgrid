@@ -473,3 +473,16 @@ def test_check_accepts_a_flash_and_a_reset_script(tmp_path, monkeypatch):
     check.check_env_file(rep, str(env), 'p')
     assert 'ok    flash driver FakeScriptDriver' in out.getvalue()
     assert rep.failed == 0, out.getvalue()
+
+
+def test_lab_places_asks_once_per_process(monkeypatch):
+    import subprocess
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, '{"p": {"tags": {}}}', '')
+    monkeypatch.setattr(common, '_LAB_PLACES', {})
+    monkeypatch.setattr(common.subprocess, 'run', run)
+    assert common.lab_places('c:1') == common.lab_places('c:1') == {'p': {'tags': {}}}
+    assert len(calls) == 1

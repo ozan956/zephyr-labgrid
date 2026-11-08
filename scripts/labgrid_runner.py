@@ -254,6 +254,10 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         One coordinator query gives the owner, the tags and, without a
         --dev-id, the place of the user that fits the build.
         """
+        if self.acquire and self.place and self.env_file:
+            # A generated hardware map: it took the place and the file from
+            # the tags, and the place is acquired already.
+            return
         coordinator = common.coordinator_for_env(self.env_file)
         try:
             places = common.lab_places(coordinator)

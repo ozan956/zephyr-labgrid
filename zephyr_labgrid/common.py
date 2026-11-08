@@ -47,6 +47,9 @@ def close_session(session):
         pass
 
 
+_LAB_PLACES = {}
+
+
 def lab_places(coordinator=None):
     """All places of the coordinator as a dict, read in a child process.
 
@@ -57,6 +60,9 @@ def lab_places(coordinator=None):
     """
     import json
     coordinator = coordinator or default_coordinator()
+    # west runs the runner once per sysbuild image in one process
+    if coordinator in _LAB_PLACES:
+        return _LAB_PLACES[coordinator]
     env = dict(os.environ)
     env.pop('LG_ENV', None)
     # Replace sys.path[0] (the current directory with -c/-m) by the
@@ -70,7 +76,8 @@ def lab_places(coordinator=None):
     if proc.returncode != 0:
         raise PlaceLookupError(proc.stderr.strip() or
                                f'could not read the places of {coordinator}')
-    return json.loads(proc.stdout)
+    _LAB_PLACES[coordinator] = json.loads(proc.stdout)
+    return _LAB_PLACES[coordinator]
 
 
 def place_tags(place, coordinator=None):
