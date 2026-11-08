@@ -83,6 +83,29 @@ def test_image_prefers_hex_then_bin(runner_mod, runner_config, clean_env):
     assert r2._image() == '/some/image.bin'
 
 
+def test_openocd_gets_the_elf_instead_of_a_bin(runner_mod, runner_config, clean_env):
+    r = create(runner_mod, runner_config, ['--dev-id', 'p', '--env', '/e.yaml'])
+    assert r._openocd_image(runner_config.hex_file) == runner_config.hex_file
+    with pytest.raises(RuntimeError, match='no zephyr.elf'):
+        r._openocd_image(runner_config.bin_file)
+    Path(runner_config.elf_file).write_bytes(b'\x7fELF')
+    assert r._openocd_image(runner_config.bin_file) == runner_config.elf_file
+
+
+def test_openocd_refuses_a_given_bin(runner_mod, runner_config, clean_env):
+    from runners.core import FileType
+
+    def image(file, file_type=FileType.OTHER):
+        cfg = runner_config._replace(file=file, file_type=file_type)
+        r = create(runner_mod, cfg, ['--dev-id', 'p', '--env', '/e.yaml'])
+        return r._openocd_image(file)
+    with pytest.raises(RuntimeError, match='address 0'):
+        image('/x/app.bin')
+    with pytest.raises(RuntimeError, match='address 0'):
+        image('/x/app', FileType.BIN)
+    assert image('/x/app.elf') == '/x/app.elf'
+
+
 class FakeConf:
     def __init__(self, values, edt=None):
         self.values = values
@@ -402,6 +425,17 @@ def test_flash_does_not_reset(runner, monkeypatch):
     fake_environment(monkeypatch, FakeTarget({'ResetProtocol': rst, 'BootstrapProtocol': boot}))
     runner.do_run('flash')
     assert len(boot.loaded) == 1 and rst.count == 0
+
+
+def test_flash_with_openocd_skips_the_bin(runner, runner_config, monkeypatch):
+    class OpenOCDDriver(FakeBootstrap):
+        pass
+    ocd = OpenOCDDriver()
+    os.unlink(runner_config.hex_file)
+    Path(runner_config.elf_file).write_bytes(b'\x7fELF')
+    fake_environment(monkeypatch, FakeTarget({'BootstrapProtocol': ocd}))
+    runner.do_run('flash')
+    assert ocd.loaded == [runner_config.elf_file]
 
 
 def test_reset_command_falls_back_to_openocd(runner, monkeypatch):

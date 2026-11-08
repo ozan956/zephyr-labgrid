@@ -25,7 +25,7 @@ import os
 import sys
 from pathlib import Path
 
-from runners.core import RunnerCaps, RunnerConfig, ZephyrBinaryRunner
+from runners.core import FileType, RunnerCaps, RunnerConfig, ZephyrBinaryRunner
 
 # The zephyr_labgrid package sits next to scripts/ in the module checkout.
 # west loads this file by path, so put the checkout first on sys.path; a pip
@@ -136,6 +136,24 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             if candidate and Path(candidate).is_file():
                 return candidate
         raise RuntimeError('no image found in build directory')
+
+    def _openocd_image(self, image):
+        """OpenOCD load commands have no address, so a raw .bin would be
+        written to address 0. Take the ELF of the build instead."""
+        given = self.cfg.file is not None
+        if not (Path(image).suffix == '.bin'
+                or (given and self.cfg.file_type == FileType.BIN)):
+            return image
+        if given:
+            raise RuntimeError(f'{image} is a raw binary without an address, which '
+                               'OpenOCD would write to address 0. Flash the .hex or '
+                               '.elf of the build instead')
+        elf = self.cfg.elf_file
+        if not (elf and Path(elf).is_file()):
+            raise RuntimeError('the build has only a raw .bin, which OpenOCD would '
+                               'write to address 0, and no zephyr.elf')
+        self.logger.info(f'flashing {elf} instead, OpenOCD needs the addresses')
+        return elf
 
     def _get_flasher(self, target):
         """Return (driver, kind) where kind is 'bootstrap' or 'script'."""
@@ -410,6 +428,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
 
                 flasher, kind = self._get_flasher(target)
                 if kind == 'bootstrap':
+                    if type(flasher).__name__ == 'OpenOCDDriver':
+                        image = self._openocd_image(image)
                     flasher.load(image)
                 else:
                     self._flash_with_script(flasher, image)

@@ -115,7 +115,9 @@ loads the environment and picks the flasher. That is the driver named by
 ``FlashScriptDriver``.
 
 -  ``BootstrapProtocol`` gets ``load(image)``. The image is ``--file``, else
-   ``zephyr.hex``, ``zephyr.bin``, ``zephyr.elf``.
+   ``zephyr.hex``, ``zephyr.bin``, ``zephyr.elf``. The load commands of
+   ``OpenOCDDriver`` have no address, so it gets ``zephyr.elf`` instead of a
+   raw ``.bin``, and a ``.bin`` given with ``--file`` is refused.
 -  With ``FlashScriptDriver`` the image is copied with ``ManagedFile``, ``{image}``
    in ``args`` becomes its remote path, ``{address}`` the flash offset. Without
    ``{image}`` the path is appended. The offset is
