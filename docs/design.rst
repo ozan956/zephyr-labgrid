@@ -6,8 +6,9 @@
 Design notes
 ============
 
-How zephyr-labgrid works inside. For contributors and for anyone debugging
-an unusual setup. Users start at :ref:`the documentation index <index>`.
+This page explains how zephyr-labgrid works inside, for contributors and
+for debugging an unusual setup. Users start at :ref:`the documentation
+index <index>`.
 
 Pieces
 ------
@@ -43,10 +44,11 @@ Pieces
 
 ``CMakeLists.txt`` calls ``board_finalize_runner_args(labgrid)``. Zephyr
 processes module CMake before ``cmake/flash``, so the runner shows up in
-every build's ``runners.yaml`` without touching any ``board.cmake``. It is not
-the default unless the user sets ``BOARD_FLASH_RUNNER=labgrid``. Arguments
-from ``BOARD_RUNNER_ARGS_labgrid`` in the CMake cache land in ``runners.yaml``
-too.
+the ``runners.yaml`` of every build without touching any ``board.cmake``.
+It is not the default unless the user sets ``BOARD_FLASH_RUNNER=labgrid``.
+Arguments from ``BOARD_RUNNER_ARGS_labgrid`` in the CMake cache land in
+``runners.yaml`` too. A build directory configured before the module was
+enabled has no ``labgrid`` runner until it is built again with ``-p``.
 
 West loads ``scripts/labgrid_runner.py`` by path. The runner puts the module
 checkout first on ``sys.path`` so that the ``zephyr_labgrid`` package from the
@@ -100,7 +102,7 @@ The tag is read in a child process (``zephyr_labgrid.placeinfo``). labgrid's
 ``RemotePlace`` opens its own coordinator session later in the runner
 process, and the coordinator accepts one session per process. The child
 replaces ``sys.path[0]`` (the current directory) with the module directory,
-so a ``labgrid/`` clone in the current directory can not hide the installed
+so a ``labgrid/`` clone in the current directory cannot hide the installed
 package.
 
 The runner resolves the environment in ``do_run``, not when it is created,
@@ -130,12 +132,18 @@ The flash driver is deactivated right after loading so the probe is free.
 ``west reset`` tries ResetProtocol, then the ``FlashScriptDriver`` named
 ``reset``, then PowerProtocol (``cycle``), then
 ``OpenOCDDriver.execute(['init', 'reset run', 'shutdown'])``, and fails
-without any of them. ``west flash`` does not reset afterwards, the flasher
-resets the board itself. The runner does not declare the ``reset``
-capability, west would otherwise add ``--reset`` to every flash and reset
-the board twice. The reset script runs with its own ``args``, without an image. Because
-of it an environment may have two FlashScriptDrivers, and the flasher is
-then the one that is not named ``reset``.
+without any of them. ``west flash`` does not reset afterwards, because the
+flasher resets the board itself. The runner does not declare the ``reset``
+capability, since west would then add ``--reset`` to every flash and reset
+the board twice. The reset script runs with its own ``args``, without an
+image. An environment may therefore have two FlashScriptDrivers, and the
+flasher is the one that is not named ``reset``.
+
+On a place tagged ``zephyr_flash_before`` the runner refuses to flash or
+reset while a ``labgrid-pty`` has the console open, and ``labgrid-pty``
+refuses the place under Twister without ``--flash-before`` or a hardware
+map. Otherwise the flash would fail on the open port while the old
+firmware could still pass the test.
 
 West does not apply ``--dry-run`` itself, so the runner reads it in ``do_create``
 and then only logs what it would do, without contacting the coordinator
@@ -153,15 +161,16 @@ Hardware maps from ``labgrid-twister-hwmap`` pass the hidden ``--acquire``
 and ``--acquire-wait`` options to the runner and to ``labgrid-pty``. Twister
 starts both at the same time when the board is flashed with the console
 open, so both acquire.
+
 The tools of one labgrid user on one host coordinate through a lock
-directory. Its name has the owner name of labgrid, so tools with another
+directory. Its name contains the labgrid owner name, so tools with another
 ``LG_USERNAME`` never wait for its lock.
 
 ::
 
    $TMPDIR/zephyr-labgrid-<uid>/<coordinator>-<host>_<user>-<place>/
-     lock                 flock() while talking to the coordinator
-     <pid>.pid            one per running tool that uses the place
+     lock                    flock() while talking to the coordinator
+     <pid>.pid               one per running tool that uses the place
      acquired-by-tools       present while a tool holds the place
      console-<pid>.starting  labgrid-pty is opening the console
      console-<pid>.ready     labgrid-pty has the console open
@@ -178,9 +187,10 @@ that the tool starts first and waits for. The child takes the lock, removes
 the pid file of the tool, checks that no other tool uses the place, runs
 ``labgrid-client release`` and removes the marker. The tool itself never
 waits for the lock when it releases, because another tool may hold it for
-a second while it talks to the coordinator. Twister stops a tool with SIGTERM and sends SIGKILL 0.5 s later,
-and it collects the processes to kill before the SIGTERM. A child started
-after that survives the SIGKILL and finishes the release. ``labgrid-pty``
+a second while it talks to the coordinator. Twister stops a tool with
+SIGTERM and sends SIGKILL 0.5 s later, and it collects the processes to
+kill before the SIGTERM. A child started after that survives the SIGKILL
+and finishes the release. ``labgrid-pty``
 starts the release before it closes the console for the same reason. The
 child runs in its own session and ignores SIGTERM, SIGINT and SIGHUP.
 
@@ -195,14 +205,11 @@ by hand since, so the next tool removes the marker, keeps the place and
 tells the user to release it by hand.
 
 The runner holds the place for the whole west process
-(``common.hold_place_for_process``) and releases it from ``atexit``. ``west flash`` runs the runner once per sysbuild image in one process, and releasing
-per image would let someone take the place between MCUboot and the
-application. On SIGTERM (Twister's flash timeout) the runner ignores further
-SIGTERMs, releases and exits.
-
-Tools share a place by user and host only. Two Twister runs of the same
-user on the same host therefore share a board instead of waiting for each
-other.
+(``common.hold_place_for_process``) and releases it from ``atexit``.
+``west flash`` runs the runner once per sysbuild image in one process, and
+releasing per image would let someone take the place between MCUboot and
+the application. On SIGTERM, which Twister sends on its flash timeout, the
+runner ignores further SIGTERMs, releases and exits.
 
 Console bridge
 --------------
@@ -228,9 +235,12 @@ passes nothing to ``west flash`` that says a console is coming, so when the
 parent process has ``twister`` in its command line (Linux ``/proc``) the
 runner first looks for a starting labgrid-pty for 5 s. With Twister's
 ``--flash-before`` the console opens after flashing, and the runner does not
-look. Hardware maps write ``--wait-console`` explicitly, 30 or 0 for boards
-flashed before the console opens. An interactive ``west flash`` does not
-wait.
+look. Hardware maps write ``--wait-console=0`` for boards flashed before the
+console opens. An interactive ``west flash`` does not wait.
+
+In a terminal of a foreground job, and not under Twister, ``labgrid-pty``
+puts the terminal into raw mode with output translation and exits on
+Ctrl-].
 
 RFC2217 purge
 ~~~~~~~~~~~~~
@@ -246,20 +256,18 @@ Twister behaviour this relies on
 
 From ``scripts/pylib/twister/twisterlib/handlers.py``.
 
--  The flash command is ``west flash --no-rebuild -d BUILD --runner RUNNER -- <--west-flash args> <runner_params>``. ``--west-flash`` args are added
-   for every device, ``runner_params`` and ``base_params`` only when the entry
-   has an ``id`` or ``probe_id``.
+-  The flash command is ``west flash --no-rebuild -d BUILD --runner RUNNER
+   -- <--west-flash args> <runner_params>``. ``--west-flash`` args are added
+   for every device, ``runner_params`` and ``base_params`` only when the
+   entry has an ``id`` or ``probe_id``.
 -  The runner comes from the map entry, else ``--west-runner``.
 -  ``serial_pty`` is split on commas and spaces and started before the flash,
    or after it with ``flash_before``.
--  A flash failure is a non-zero exit or the flash timeout, there is no
+-  A flash failure is a non-zero exit or the flash timeout. There is no
    other signal.
+-  ``west flash -H`` imports module runners only after it prints the runner
+   help, so it does not know ``labgrid``.
 
-Not there yet
--------------
-
--  ``west debug``, ``debugserver`` and ``attach`` need a gdb server mode in
-   labgrid's ``OpenOCDDriver`` and port forwarding to the client. Planned as
-   a labgrid contribution, and the runner will use it when it lands.
--  A real serial port for the pytest ``mcumgr`` fixture, several console
-   UARTs per place, ``--erase``.
+What is missing is listed in :ref:`supported`. ``west debug`` needs a GDB
+server mode in labgrid's ``OpenOCDDriver`` and port forwarding to the
+client, planned as a labgrid contribution.
