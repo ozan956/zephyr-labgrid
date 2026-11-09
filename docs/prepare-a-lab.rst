@@ -18,9 +18,9 @@ and test on your boards. For every board you do six things.
 6. :ref:`Test the place yourself <lab-test>`.
 
 Your users then need the coordinator address and the directory with the
-environment files, nothing else. The last section explains how they
-:ref:`share the boards in Twister runs <lab-twister>`. To try all of this
-on one machine first, see :ref:`quickstart`.
+environment files. The last section explains how Twister runs
+:ref:`share the boards <lab-twister>`. To try all of this on one machine
+first, see :ref:`quickstart`.
 
 .. _lab-export:
 
@@ -35,7 +35,7 @@ serial number of the probe, so that they stay together. Find it with
 .. code:: yaml
 
    # exporter.yaml
-   stm32f746g-disco-1:
+   stm32f746g-disco:
      USBDebugger:
        match:
          ID_SERIAL_SHORT: '066CFF505356867767051752'
@@ -57,8 +57,8 @@ which OpenOCD uses. A flash script instead needs the device as a
          SUBSYSTEM: 'usb'
          DEVTYPE: 'usb_device'
 
-Add a power switch of the board (USB hub port, relay, PDU) when you have
-one. Users can then power cycle a board that hangs.
+Export a power switch of the board too when you have one, a USB hub port,
+a relay or a PDU. Users can then power cycle a board that hangs.
 
 .. _lab-env:
 
@@ -71,7 +71,7 @@ which the runner sets, so the same file serves every board of the family.
 
 .. code:: yaml
 
-   # stm32f7/labgrid.yaml
+   # stm32f746g_disco/labgrid.yaml
    targets:
      main:
        resources:
@@ -101,7 +101,7 @@ Pick the flash driver by how the board is flashed.
    * - by a probe that OpenOCD supports
      - ``OpenOCDDriver``
      - Set ``board_config`` or ``config``, as above. OpenOCD picks the probe
-       by its USB path, so several probes on one exporter are fine.
+       by its USB path, so one exporter can serve several probes.
    * - by a vendor tool (STM32CubeProgrammer, J-Link Commander, nrfutil,
        pyocd, dfu-util)
      - ``FlashScriptDriver``
@@ -111,7 +111,7 @@ Pick the flash driver by how the board is flashed.
      - A script as above, plus the tags ``zephyr_flash_before`` and
        ``zephyr_reset_rts`` on the place, see step 3.
 
-Keep the ``SerialDriver``, ``labgrid-pty`` uses it for the console.
+Keep the ``SerialDriver``. ``labgrid-pty`` uses it for the console.
 
 Flash scripts
 ~~~~~~~~~~~~~
@@ -149,10 +149,11 @@ example scripts do.
 Reset without flashing
 ~~~~~~~~~~~~~~~~~~~~~~
 
-``west reset -r labgrid`` uses a ``ResetProtocol`` driver, an OpenOCD driver
-or a power switch. When only a vendor tool can reset the board, add the
-command as a second ``FlashScriptDriver`` named ``reset``. Two drivers of
-the same class need the list form of ``drivers``.
+``west reset -r labgrid`` tries a ``ResetProtocol`` driver, then a
+``FlashScriptDriver`` named ``reset``, then a power switch, then OpenOCD.
+When only a vendor tool can reset the board, add the command as that second
+``FlashScriptDriver``. Two drivers of the same class need the list form of
+``drivers``.
 
 .. code:: yaml
 
@@ -180,23 +181,21 @@ Examples in the repository
      - Good to know
    * - STM32F746G-DISCO
      - OpenOCD, or STM32CubeProgrammer through a script
-     - Nothing special. ``labgrid.yaml`` and ``labgrid-stm32cubeprog.yaml``
-       are the two ways.
+     - ``labgrid.yaml`` and ``labgrid-stm32cubeprog.yaml`` are the two
+       ways.
    * - ESP32-DevKitC
      - esptool through a script, over the console UART
      - Export the tty a second time as ``USBFlashableDevice`` matched on
        ``SUBSYSTEM: tty``, and tag the place with
-       ``zephyr_flash_before=true`` and ``zephyr_reset_rts=true``. Without
-       them the console blocks the flash, or the boot banner is gone before
-       the console opens. The script also resets the board for ``west
-       reset``, which needs the console closed.
+       ``zephyr_flash_before=true`` and ``zephyr_reset_rts=true``. The
+       script also resets the board for ``west reset``.
    * - Alif Ensemble E8 DevKit
      - J-Link Commander through ``jlink.sh``, with a reset script
      - Install the SEGGER J-Link software on the exporter, and leave SW4 in
        the UART4 position for the console. Once per board, write a table
        of images that boots the M55 HP core from MRAM, with the Alif
        Security Toolkit over the SE-UART (SW4 in the SE-UART position).
-       Without it the core does not run and the J-Link can not attach.
+       Without it the core does not run and the J-Link cannot attach.
        Copy ``zephyr.bin`` of any build to ``build/images/`` and
        ``zephyr-hp.json`` to ``build/config/`` of the toolkit, then run
        ``app-gen-toc -f build/config/zephyr-hp.json`` and
@@ -209,14 +208,14 @@ Examples in the repository
 
 .. code-block:: console
 
-   $ labgrid-client -p stm32f746g-disco-1 create
-   $ labgrid-client -p stm32f746g-disco-1 add-match "exporter1/stm32f746g-disco-1/*"
-   $ labgrid-client -p stm32f746g-disco-1 set-tags \
+   $ labgrid-client -p stm32f746g-disco create
+   $ labgrid-client -p stm32f746g-disco add-match "exporter1/stm32f746g-disco/*"
+   $ labgrid-client -p stm32f746g-disco set-tags \
        zephyr_platform=stm32f746g_disco/stm32f746xx \
-       zephyr_env=stm32f7/labgrid.yaml
+       zephyr_env=stm32f746g_disco/labgrid.yaml
 
-labgrid ignores these tags, the zephyr-labgrid tools read them. The first
-two are needed, the others when the board needs them.
+labgrid ignores these tags. The zephyr-labgrid tools read them, and only
+the first two are required.
 
 .. list-table::
    :header-rows: 1
@@ -256,16 +255,15 @@ relative ``zephyr_env`` tags then work wherever each user has the copy.
 5. Check the exporter host
 --------------------------
 
--  ser2net 4.6.1 or newer. ser2net 4.6.0 (Ubuntu 24.04) never answers the
-   RFC2217 purge request. ``labgrid-pty`` notices it and continues without
-   purge, at the cost of one second per console. See labgrid issue #1396.
--  openocd 0.11 or newer, so that USB path selection works with several
-   probes on one host.
--  udev rules that give the exporter user access to the probes, the
+-  ser2net 4.6.1 or newer. ser2net 4.6.0, as in Ubuntu 24.04, never answers
+   the RFC2217 purge request (labgrid issue #1396). ``labgrid-pty`` then
+   goes on without purge, which costs one second per console.
+-  openocd 0.11 or newer, for several probes on one host.
+-  udev rules that give the exporter user access to the probes, through the
    ``plugdev`` group or the rules of the vendor.
--  No ModemManager probing of the serial ports, it sends AT commands into the
-   board console. Disable it, or blacklist the vendor and product ID of the
-   probe.
+-  ModemManager must not probe the serial ports, because it sends AT
+   commands into the board console. Disable it, or blacklist the vendor and
+   product ID of the probe.
 
 .. _lab-test:
 
@@ -284,55 +282,53 @@ Before you hand the place out, go through the loop of a user once.
    $ sleep 30 | labgrid-pty &
    $ west reset -r labgrid
    $ kill %1
-   $ labgrid-client -p stm32f746g-disco-1 release
+   $ labgrid-client -p stm32f746g-disco release
 
 The check should print no ``FAIL``, and the console should show
 ``Hello World!`` after the reset. Then run ``samples/hello_world`` and
-``samples/subsys/testsuite/pytest/shell`` with Twister. The second one
-checks that typing into the console works too.
+``samples/subsys/testsuite/pytest/shell`` with Twister. The second one also
+checks that typing into the console works.
 
 .. _lab-twister:
 
 Sharing the boards in Twister runs
 ----------------------------------
 
-A labgrid place belongs to one user at a time. There are three ways to
-share the boards, pick one per group of places.
+A labgrid place belongs to one user at a time. Developers hold a place for
+interactive work and release it when they are done. For shared boards and
+CI, write a hardware map once with ``labgrid-twister-hwmap -o map.yml``.
+Each test then takes its place when it starts and gives it back when it
+ends. When someone else has the place, the test waits for it, 300 seconds
+by default (``--wait SECONDS``). A test farm can instead let a CI account
+hold all places for the whole run. The tests never release a place that
+was held before they started.
 
-1. **Users hold places for their own work.** A developer acquires a place,
-   uses it with ``west`` and Twister, and releases it. Good for interactive
-   work.
-2. **Twister takes places per test.** Write a hardware map once with
-   ``labgrid-twister-hwmap -o map.yml``. Each test takes its place when it
-   starts and gives it back when it ends, and waits up to 300 seconds when
-   someone else has it (``--wait SECONDS``). Good for shared boards and CI.
-3. **A CI account holds the places.** It acquires all places once and runs
-   Twister with a map. The tests never release a place that was held
-   before, so the places stay with the account. Good for a test farm.
-
-The map tool reads the tags of step 3, finds the environment files as the
-runner does, and ``-p PLATFORM`` or ``--place NAME`` limit it to some places.
-Write the map again when the lab gets new boards. One entry looks like this.
+The map tool reads the tags of the places and finds the environment files
+as the runner does. ``-p PLATFORM`` and ``--place NAME`` limit it to some
+places. One entry looks like this.
 
 .. code:: yaml
 
    - connected: true
-     id: stm32f746g-disco-1
+     id: stm32f746g-disco
      platform: stm32f746g_disco/stm32f746xx
      product: labgrid
      runner: labgrid
      runner_params:
-       - --dev-id=stm32f746g-disco-1
-       - --env=/shared/labgrid-envs/stm32f7/labgrid.yaml
+       - --dev-id=stm32f746g-disco
+       - --env=/shared/labgrid-envs/stm32f746g_disco/labgrid.yaml
        - --acquire
        - --acquire-wait=300
-     serial_pty: "labgrid-pty,-p,stm32f746g-disco-1,-e,/shared/labgrid-envs/stm32f7/labgrid.yaml,--acquire,--acquire-wait=300"
+     serial_pty: "labgrid-pty,-p,stm32f746g-disco,-e,/shared/labgrid-envs/stm32f746g_disco/labgrid.yaml,--acquire,--acquire-wait=300"
      flash_timeout: 360
 
-``--acquire`` and ``--acquire-wait`` are meant for generated maps, users never
-type them. ``flash_timeout`` includes the wait for a busy place.
+``--acquire`` and ``--acquire-wait`` are only for generated maps.
+``flash_timeout`` includes the wait for a busy place. The map has absolute
+paths and place names, so write it on the machine that runs Twister, and
+again when the lab gets new boards.
 
-labgrid knows the owner of a place only as host and user, so two Twister
-runs of the same user on the same host share a board instead of waiting
-for each other. CI executors on one host and user should each set their
-own ``LG_USERNAME``.
+labgrid knows the owner of a place only as host and user. Two Twister runs
+of the same user on the same host therefore share a board instead of
+waiting for each other. CI jobs that share a host and a user should each
+set their own ``LG_USERNAME``. To stop a CI job, signal the whole process
+group of Twister, because its workers outlive the main process.
