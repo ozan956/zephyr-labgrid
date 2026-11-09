@@ -6,9 +6,8 @@
 For Zephyr developers
 =====================
 
-You have a Zephyr workspace and want to flash, reset or test on a board
-that is not on your desk but on a labgrid exporter in the lab. Your daily
-commands stay almost the same.
+You have a Zephyr workspace and want to flash, reset or test on a board in
+a labgrid lab. Your daily commands stay almost the same.
 
 .. _daily-routine:
 
@@ -52,8 +51,8 @@ Your routine, next to a board on your desk
      - the same
 
 No command needs a place name. The runner and ``labgrid-pty`` use the
-place you hold for the board, and hardware maps take each place for one
-test and give it back.
+place you hold for the board. A hardware map lets each test take a place
+and give it back.
 
 What you need
 -------------
@@ -73,15 +72,16 @@ and ``twister``. Python 3.11 or newer is needed.
    $ git clone https://github.com/ozan956/zephyr-labgrid.git
    $ pip install -e ./zephyr-labgrid
 
-The module needs labgrid master, because no labgrid release has everything
-it uses yet. ``pip install`` gives you ``labgrid-pty``,
+No labgrid release has everything the module uses yet, so install labgrid
+master. ``pip install`` gives you ``labgrid-pty``,
 ``labgrid-twister-hwmap`` and ``labgrid-twister-check``. With ``-e`` the
-tools and the runner always come from the same checkout.
+tools and the runner come from the same checkout.
 
 Enable the module
 -----------------
 
-Add it to your ``west.yml`` and run ``west update``.
+Add it to your ``west.yml``, run ``west update`` and install that copy with
+``pip install -e modules/lib/zephyr-labgrid`` instead of the clone above.
 
 .. code:: yaml
 
@@ -92,13 +92,15 @@ Add it to your ``west.yml`` and run ``west update``.
          revision: main
          path: modules/lib/zephyr-labgrid
 
-or point an existing workspace at the checkout.
+Or point an existing workspace at the checkout.
 
 .. code-block:: console
 
    $ export ZEPHYR_EXTRA_MODULES=/path/to/zephyr-labgrid
 
-Every build then has a ``labgrid`` runner in ``build/zephyr/runners.yaml``.
+Every new build then has a ``labgrid`` runner in
+``build/zephyr/runners.yaml``. Build directories from before need a
+pristine build, ``west build -p``.
 
 Point it at the lab
 -------------------
@@ -124,14 +126,14 @@ Twister's pytest harness then loads too, and the plugin fails on the
 Hold a board
 ------------
 
-A labgrid place belongs to one user at a time, like a board on a desk.
-Take it before you work with it and give it back afterwards.
+A labgrid place belongs to one user at a time. Take it before you work
+with it and give it back afterwards.
 
 .. code-block:: console
 
    $ labgrid-client places
-   $ labgrid-client -p stm32f746g-disco-1 acquire
-   $ labgrid-client -p stm32f746g-disco-1 release
+   $ labgrid-client -p stm32f746g-disco acquire
+   $ labgrid-client -p stm32f746g-disco release
 
 ``west flash``, ``west reset`` and ``labgrid-pty`` never take a place for
 you. When you hold none for the board, they say which places are free
@@ -144,13 +146,14 @@ Check the setup
 
 .. code-block:: console
 
-   $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd
+   $ labgrid-twister-check -p stm32f746g-disco --tool openocd
 
-prints one line per check. It covers labgrid, tools on ``PATH``,
-environment variables, coordinator, place and tags, environment file,
-flash tool on the exporter (``--tool esptool`` for script based flashing)
-and the console. The last checks need the place held by you. Fix the
-``FAIL`` lines first. On a working setup it looks like this.
+The check covers labgrid, the tools on ``PATH``, the coordinator, the place
+and its tags, the environment file, the flash tool on the exporter and the
+console. Pass the tool your board flashes with, for example ``--tool
+esptool``. The checks of the environment and the console need the place
+held by you. Fix the ``FAIL`` lines first. On a working setup it looks like
+this.
 
 .. code-block:: text
 
@@ -158,8 +161,8 @@ and the console. The last checks need the place held by you. Fix the
    ok    labgrid-pty found at /home/me/.venv/bin/labgrid-pty
    ok    labgrid-client found at /home/me/.venv/bin/labgrid-client
          no --env or ZEPHYR_LABGRID_ENV: the zephyr_env tag of the place is used
-   ok    coordinator lab:20408: 12 place(s), 9 with zephyr_platform tag
-   ok    place stm32f746g-disco-1 is acquired by you (myhost/me)
+   ok    coordinator lab-coordinator:20408: 12 place(s), 9 with zephyr_platform tag
+   ok    place stm32f746g-disco is acquired by you (myhost/me)
    ok    tag zephyr_platform=stm32f746g_disco/stm32f746xx
    ok    tag zephyr_env=stm32f746g_disco/labgrid.yaml
    ok    environment file /shared/labgrid-envs/stm32f746g_disco/labgrid.yaml from the zephyr_env tag
@@ -167,10 +170,10 @@ and the console. The last checks need the place held by you. Fix the
          drivers: SerialDriver, OpenOCDDriver
    ok    console driver present
    ok    flash driver OpenOCDDriver
-   ok    resource NetworkUSBDebugger USBDebugger on localhost: available
-   ok    resource NetworkUSBFlashableDevice USBFlashableDevice on localhost: available
-   ok    resource NetworkSerialPort USBSerialPort on localhost: available
-   ok    openocd on exporter localhost: /usr/bin/openocd
+   ok    resource NetworkUSBDebugger USBDebugger on exporter1: available
+   ok    resource NetworkUSBFlashableDevice USBFlashableDevice on exporter1: available
+   ok    resource NetworkSerialPort USBSerialPort on exporter1: available
+   ok    openocd on exporter exporter1: /usr/bin/openocd
    ok    console opened in 1.3 s
    ok    RFC2217 purge answered
    all checks passed, 0 warning(s)
@@ -187,10 +190,10 @@ Flash and reset
 The runner uses the place you hold whose ``zephyr_platform`` tag fits the
 build. When you hold several, pick one with ``--dev-id`` or ``$LG_PLACE``.
 A place whose tag does not fit the build is refused, so a native_sim
-binary never ends up on an STM32 board. ``--dry-run`` prints what would
-happen without flashing.
+binary never ends up on an STM32 board.
 
-Runner options after ``--``.
+Runner options go after ``--``, for example ``west flash -r labgrid --
+--dev-id PLACE``.
 
 .. list-table::
    :header-rows: 1
@@ -211,7 +214,7 @@ Runner options after ``--``.
    * - ``--power-cycle``
      - power cycle the place before flashing (needs a PowerProtocol driver)
    * - ``--file FILE``, ``--file-type TYPE``
-     - flash another file than the build output
+     - flash a file other than the build output
    * - ``--timeout SECONDS``
      - time limit for the flash or reset script of the environment
    * - ``--wait-console SECONDS``
@@ -219,28 +222,18 @@ Runner options after ``--``.
        flashing. By default the runner waits only when one is starting, as
        under Twister. 0 never waits.
    * - ``--dry-run``
-     - log what would be done, do nothing
+     - log what would be done, do nothing. The place must still be yours.
 
-The runner flashes ``zephyr.hex`` if it exists, else ``zephyr.bin``, else
-``zephyr.elf``. The environment file decides how, with a
-``BootstrapProtocol`` driver such as OpenOCD, or with a
-``FlashScriptDriver`` that runs a vendor tool on the exporter. Pick one
-with ``--driver`` if the file has both.
+The environment file of the lab owner decides how the board is flashed and
+reset. You only choose the image, with ``--file``.
 
-``west reset`` uses a ResetProtocol driver, else the reset script of the lab
-owner, else a PowerProtocol driver (power cycle), else OpenOCD
-(``reset run``).
+Sysbuild builds, MCUboot with an application or images for several cores,
+are flashed one image after the other in one ``west flash`` call. The place
+stays yours between the images, and each image goes to its own partition.
 
-Sysbuild builds (MCUboot and application, several cores) are flashed one
-image after the other in one ``west flash`` call, all on the same place.
-The place stays yours between the images. Each image goes to its own
-partition, MCUboot to the boot partition and the signed application to
-slot 0. Twister builds with sysbuild when the test asks for it, as
-``samples/sysbuild/with_mcuboot`` does.
-
-For boards flashed over their console UART (ESP32 dev kits), close the
-console (``labgrid-pty``, ``labgrid-client console``) before ``west flash``,
-or the flash tool and the console fight over the port.
+A board that flashes over its console port, like an ESP32 dev kit, cannot
+be flashed or reset while ``labgrid-pty`` has its console open. Close the
+console first.
 
 .. _default-runner:
 
@@ -266,16 +259,14 @@ Watch the console
    $ labgrid-pty
 
 ``labgrid-pty`` opens the console of the one place you hold. Pass ``-p
-PLACE`` when you hold several. For boards whose reset line is wired to RTS
-(ESP32 dev kits) the lab owner tags the place, and ``labgrid-pty`` then
-resets the board after connecting so that you see the boot banner.
+PLACE`` when you hold several. In a terminal it works like picocom. Every
+key goes to the board, Tab, the arrow keys and Ctrl-C too. Ctrl-] exits,
+and ``-l FILE`` also writes the output to a file.
 
-In a terminal it works like picocom. Every key goes to the board, Tab,
-the arrow keys and Ctrl-C too, and Ctrl-] exits. ``-l FILE`` also writes
-the output to a file. Started by Twister, in the background or with a
-pipe as input, it passes the bytes through unchanged and exits when its
-input closes (``sleep 60 | labgrid-pty``). ``labgrid-client -p PLACE
-console`` works too and needs ``microcom`` or ``telnet``.
+Under Twister, in the background or with a pipe as input it passes the
+bytes through unchanged and exits when its input closes, for example
+``sleep 60 | labgrid-pty``. Boards that reset through RTS, like ESP32 dev
+kits, are reset when it connects, so you see the boot banner.
 
 Run Twister on your board
 -------------------------
@@ -306,9 +297,8 @@ firmware passing it.
 Run Twister on any free board
 -----------------------------
 
-For several boards, CI and shared setups, write a hardware map once, as
-``twister --generate-hardware-map`` does for boards on your desk. Then run
-Twister with it as usual.
+For several boards, CI and shared boards, write a hardware map once and
+run Twister with it as usual.
 
 .. code-block:: console
 
@@ -322,8 +312,9 @@ by default (``labgrid-twister-hwmap --wait SECONDS``). Twister runs one
 worker per entry, so several boards of the same platform are tested in
 parallel.
 
-``-p PLATFORM`` and ``--place NAME`` limit the map to some places. The map
-names the places, so write it again when the lab gets new boards.
+Without ``-p PLATFORM`` or ``--place NAME`` the map lists every board of
+the lab, also those of your colleagues. Write the map again when the lab
+gets new boards. How runs share boards is in :ref:`lab-twister`.
 
 If something goes wrong
 -----------------------
@@ -350,8 +341,11 @@ If something goes wrong
    ``Device issue (Flash error?)``. The cause is in ``device.log`` of the test. With
    ``unknown arguments`` there, ``--west-runner labgrid`` is missing.
 -  ``cannot import name 'Environment' from 'labgrid'``. The current
-   directory contains a ``labgrid`` folder (a labgrid clone). Run from
-   another directory.
+   directory contains a labgrid clone. Run from another directory.
+-  ``No matching distribution found for labgrid>=26.1.dev0``. Install
+   labgrid master first, as shown above.
+-  ``board ... does not support runner labgrid``. The build directory is
+   older than the module, build again with ``west build -p``.
 
 .. _supported:
 
@@ -366,7 +360,7 @@ What is supported
      - Status
    * - ``west flash``, with ``--file``, ``--dry-run`` and sysbuild
      - yes. OpenOCD gets the ``.hex`` or ``.elf``, never a raw ``.bin``.
-       Sysbuild with MCUboot is tried on an ESP32-DevKitC.
+       Sysbuild with MCUboot is tested on an ESP32-DevKitC.
    * - ``west reset``
      - yes, through ResetProtocol, a reset script, PowerProtocol or OpenOCD
    * - ``west debug``, ``debugserver``, ``attach``, ``rtt``

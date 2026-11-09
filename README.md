@@ -47,6 +47,7 @@ Point the tools at your lab and check the setup.
 ```sh
 export LG_COORDINATOR=lab-coordinator:20408
 export ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
+labgrid-client -p stm32f746g-disco acquire
 labgrid-twister-check -p stm32f746g-disco
 ```
 
@@ -72,7 +73,7 @@ yet, see [What is supported](https://ozandurgut.com/zephyr-labgrid/flash-and-tes
 ## Contributing
 
 Reports from other labs and boards are welcome as issues. To run the tests,
-install with `pip install -e ".[test]"` and run `ZEPHYR_BASE=/path/to/zephyr pytest`.
+install with `pip install -e ".[test]" west` and run `ZEPHYR_BASE=/path/to/zephyr pytest`.
 
 ## License
 
