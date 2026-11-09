@@ -21,6 +21,7 @@ source_suffix = '.rst'
 # Copy only the commands of a console block, without the "$ " prompt.
 copybutton_prompt_text = '$ '
 copybutton_only_copy_prompt_lines = True
+copybutton_line_continuation_character = '\\'
 
 # -- External docs configuration ---------------------------------------------
 
