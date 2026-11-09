@@ -229,6 +229,10 @@ owner, else a PowerProtocol driver (power cycle), else OpenOCD
 
 Sysbuild builds (MCUboot and application, several cores) are flashed one
 image after the other in one ``west flash`` call, all on the same place.
+The place stays yours between the images. Each image goes to its own
+partition, MCUboot to the boot partition and the signed application to
+slot 0. Twister builds with sysbuild when the test asks for it, as
+``samples/sysbuild/with_mcuboot`` does.
 
 For boards flashed over their console UART (ESP32 dev kits), close the
 console (``labgrid-pty``, ``labgrid-client console``) before ``west flash``,
@@ -361,7 +365,7 @@ What is supported
      - Status
    * - ``west flash``, with ``--file``, ``--dry-run`` and sysbuild
      - yes. OpenOCD gets the ``.hex`` or ``.elf``, never a raw ``.bin``.
-       Sysbuild is unit tested, not yet tried on a board.
+       Sysbuild with MCUboot is tried on an ESP32-DevKitC.
    * - ``west reset``
      - yes, through ResetProtocol, a reset script, PowerProtocol or OpenOCD
    * - ``west debug``, ``debugserver``, ``attach``, ``rtt``
