@@ -263,9 +263,16 @@ def check_resources(rep, target, place):
     if not resources:
         rep.fail('the place has no resources this environment can use')
         return []
+    used = [r for drv in target.drivers for r in drv.get_bound_resources()]
     for res in resources:
-        state = 'available' if res.avail else 'NOT available'
-        rep.ok(f'resource {type(res).__name__} {res.name} on {res.host}: {state}')
+        name = f'resource {type(res).__name__} {res.name} on {res.host}'
+        if res.avail:
+            rep.ok(f'{name}: available')
+        elif res in used:
+            rep.fail(f'{name}: not available. Is the board plugged in, and does the '
+                     'exporter see it?')
+        else:
+            rep.warn(f'{name}: not available, and no driver of the environment uses it')
     for drv in target.drivers:
         try:
             target.get_driver(type(drv), name=drv.name, activate=False)
