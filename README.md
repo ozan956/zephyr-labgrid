@@ -59,7 +59,6 @@ The documentation is at https://ozandurgut.com/zephyr-labgrid/.
 
 - [For Zephyr developers](https://ozandurgut.com/zephyr-labgrid/flash-and-test/), your routine next to a board on your desk
 - [For lab owners](https://ozandurgut.com/zephyr-labgrid/prepare-a-lab/), places, environment files and tags
-- [Best practices](https://ozandurgut.com/zephyr-labgrid/best-practices/)
 - [Design notes](https://ozandurgut.com/zephyr-labgrid/design/), for contributors
 
 ## Status

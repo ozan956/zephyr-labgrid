@@ -113,9 +113,13 @@ find the environment file of a place in this order.
 
 1. ``--env FILE`` on the command line
 2. ``$ZEPHYR_LABGRID_ENV``
-3. ``$LG_ENV`` (avoid it, see :ref:`best practices <keep-lg-env-unset>`)
+3. ``$LG_ENV``
 4. the ``zephyr_env`` tag of the place, relative to ``--env-dir`` or
    ``$ZEPHYR_LABGRID_ENV_DIR``
+
+Do not export ``LG_ENV``. It turns on labgrid's pytest plugin, which
+Twister's pytest harness then loads too, and the plugin fails on the
+``$LG_PLACE`` template.
 
 Hold a board
 ------------
