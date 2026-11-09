@@ -35,14 +35,19 @@ board, and these tools on the same machine.
 -  ssh to ``localhost`` without a password prompt. labgrid reaches exported
    resources over ssh, also when the exporter is on the same machine.
 
-Install the Python packages in the environment that runs west.
+Install the Python packages in the environment that runs west, from the
+top of the workspace.
 
 .. code-block:: console
 
+   $ cd ~/zephyrproject
    $ pip install "labgrid @ git+https://github.com/labgrid-project/labgrid.git"
    $ git clone https://github.com/ozan956/zephyr-labgrid.git
    $ pip install -e ./zephyr-labgrid
    $ export ZEPHYR_EXTRA_MODULES=$PWD/zephyr-labgrid
+
+Every terminal of the following steps needs this Python environment and
+the ``export`` lines, so put them into your shell profile.
 
 2. Describe the board for the exporter
 --------------------------------------
@@ -98,12 +103,12 @@ from the same directory every time.
 
 .. code-block:: console
 
-   $ export ZEPHYR_LABGRID_ENV_DIR=$PWD/zephyr-labgrid/examples
+   $ export ZEPHYR_LABGRID_ENV_DIR=$ZEPHYR_EXTRA_MODULES/examples
 
 5. Take the board, check, flash, test
 -------------------------------------
 
-Take the place, as you would take a board on your desk.
+Take the place and check the setup.
 
 .. code-block:: console
 
@@ -128,8 +133,8 @@ second terminal and reset the board.
 
 You should see ``Hello World! stm32f746g_disco/stm32f746xx``.
 
-Run Twister on the board. Compared with a board on your desk,
-``--device-serial /dev/ttyACM0`` becomes ``--device-serial-pty labgrid-pty
+Run Twister on the board. Where a board on your desk needs
+``--device-serial /dev/ttyACM0``, pass ``--device-serial-pty labgrid-pty
 --west-runner labgrid``.
 
 .. code-block:: console
