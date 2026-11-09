@@ -42,13 +42,13 @@ Your routine, next to a board on your desk
      - ``west debug``
      - not yet
    * - Twister on your board
-     - ``twister -p BOARD --device-testing --device-serial /dev/ttyACM0 -T tests``
-     - ``twister -p BOARD --device-testing --device-serial-pty labgrid-pty --west-runner labgrid -T tests``
+     - ``west twister -p BOARD --device-testing --device-serial /dev/ttyACM0 -T tests``
+     - ``west twister -p BOARD --device-testing --device-serial-pty labgrid-pty --west-runner labgrid -T tests``
    * - Twister on several boards, write the map once
-     - ``twister --generate-hardware-map map.yml``
+     - ``west twister --generate-hardware-map map.yml``
      - ``labgrid-twister-hwmap -o map.yml``
    * - Twister on several boards, run
-     - ``twister --device-testing --hardware-map map.yml -T tests``
+     - ``west twister --device-testing --hardware-map map.yml -T tests``
      - the same
 
 No command needs a place name. The runner and ``labgrid-pty`` use the
@@ -180,7 +180,7 @@ Flash and reset
 
 .. code-block:: console
 
-   $ west build -b stm32f746g_disco samples/hello_world
+   $ west build -b stm32f746g_disco zephyr/samples/hello_world
    $ west flash -r labgrid
    $ west reset -r labgrid
 
@@ -252,7 +252,7 @@ build.
 
 .. code-block:: console
 
-   $ west build -b stm32f746g_disco samples/hello_world -- -DBOARD_FLASH_RUNNER=labgrid
+   $ west build -b stm32f746g_disco zephyr/samples/hello_world -- -DBOARD_FLASH_RUNNER=labgrid
    $ west flash
 
 For sysbuild builds keep passing ``-r labgrid``, because the option does
@@ -285,26 +285,23 @@ desk, pass ``--device-serial-pty labgrid-pty --west-runner labgrid``.
 
 .. code-block:: console
 
-   $ ./scripts/twister -p stm32f746g_disco/stm32f746xx --device-testing \
+   $ west twister -p stm32f746g_disco/stm32f746xx --device-testing \
        --device-serial-pty labgrid-pty --west-runner labgrid \
-       -T tests/kernel/common
+       -T zephyr/tests/kernel/common
 
 Twister starts ``labgrid-pty`` for the console and ``west flash -r
-labgrid`` for every test. Both use the place you hold for the platform,
-and the flash waits until the console is open, so no boot output is lost.
+labgrid`` for every test. Both use the place you hold for the platform.
+The flash waits until the console is open, so no boot output is lost.
 
-For a board whose console port is also its flash port (ESP32 with a
-USB-UART bridge), add ``--flash-before``, so that Twister flashes before it
-opens the console. Without it ``labgrid-pty`` refuses to open the console
-of such a place, and the test fails. Otherwise the flash would fail on the
-open port while the old firmware could still pass the test. A ``west
-flash`` on such a place stops the same way while a ``labgrid-pty`` has its
-console open.
+For a board that flashes over its console port, add ``--flash-before`` so
+that Twister flashes before it opens the console. Without it
+``labgrid-pty`` refuses such a place and the test fails, instead of the old
+firmware passing it.
 
 .. code-block:: console
 
-   $ ./scripts/twister -p esp32_devkitc/esp32/procpu --device-testing --flash-before \
-       --device-serial-pty labgrid-pty --west-runner labgrid -T samples/hello_world
+   $ west twister -p esp32_devkitc/esp32/procpu --device-testing --flash-before \
+       --device-serial-pty labgrid-pty --west-runner labgrid -T zephyr/samples/hello_world
 
 Run Twister on any free board
 -----------------------------
@@ -315,8 +312,8 @@ Twister with it as usual.
 
 .. code-block:: console
 
-   $ labgrid-twister-hwmap -o map.yml
-   $ ./scripts/twister --device-testing --hardware-map map.yml -T tests/kernel/common
+   $ labgrid-twister-hwmap -p stm32f746g_disco -o map.yml
+   $ west twister --device-testing --hardware-map map.yml -T zephyr/tests/kernel/common
 
 You do not need to hold the places. Each test takes its place when it
 starts and gives it back when it ends, and a place you hold already stays

@@ -276,10 +276,10 @@ Before you hand the place out, go through the loop of a user once.
 
 .. code-block:: console
 
-   $ export LG_COORDINATOR=lab:20408 ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
-   $ labgrid-client -p stm32f746g-disco-1 acquire
-   $ labgrid-twister-check -p stm32f746g-disco-1 --tool openocd
-   $ west build -b stm32f746g_disco samples/hello_world
+   $ export LG_COORDINATOR=lab-coordinator:20408 ZEPHYR_LABGRID_ENV_DIR=/shared/labgrid-envs
+   $ labgrid-client -p stm32f746g-disco acquire
+   $ labgrid-twister-check -p stm32f746g-disco --tool openocd
+   $ west build -b stm32f746g_disco zephyr/samples/hello_world
    $ west flash -r labgrid
    $ sleep 30 | labgrid-pty &
    $ west reset -r labgrid

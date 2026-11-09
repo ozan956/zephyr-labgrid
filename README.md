@@ -14,11 +14,11 @@ lab as if they were on your desk.
 
 ```sh
 labgrid-client -p stm32f746g-disco acquire
-west build -b stm32f746g_disco samples/hello_world
+west build -b stm32f746g_disco zephyr/samples/hello_world
 west flash -r labgrid
 labgrid-pty
 labgrid-twister-hwmap -o map.yml
-twister --device-testing --hardware-map map.yml -T tests/kernel
+west twister --device-testing --hardware-map map.yml -T zephyr/tests/kernel
 ```
 
 ## Features

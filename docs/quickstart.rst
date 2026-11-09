@@ -115,11 +115,11 @@ Fix any ``FAIL`` lines first.
 
 .. code-block:: console
 
-   $ west build -b stm32f746g_disco samples/hello_world
+   $ west build -p -b stm32f746g_disco zephyr/samples/hello_world
    $ west flash -r labgrid
 
-The runner finds the place itself, it is the one you hold for the board.
-Watch the console in a second terminal and reset the board.
+The runner uses the place you hold for the board. Watch the console in a
+second terminal and reset the board.
 
 .. code-block:: console
 
@@ -134,9 +134,9 @@ Run Twister on the board. Compared with a board on your desk,
 
 .. code-block:: console
 
-   $ ./scripts/twister -p stm32f746g_disco/stm32f746xx --device-testing \
+   $ west twister -p stm32f746g_disco/stm32f746xx --device-testing \
        --device-serial-pty labgrid-pty --west-runner labgrid \
-       -T samples/hello_world -T samples/subsys/testsuite/pytest/shell
+       -T zephyr/samples/hello_world -T zephyr/samples/subsys/testsuite/pytest/shell
 
 Give the board back when you are done.
 
@@ -150,7 +150,7 @@ map once and run Twister with it, see :ref:`flash-and-test`.
 .. code-block:: console
 
    $ labgrid-twister-hwmap -o map.yml
-   $ ./scripts/twister --device-testing --hardware-map map.yml -T samples/hello_world
+   $ west twister --device-testing --hardware-map map.yml -T zephyr/samples/hello_world
 
 Next
 ----
