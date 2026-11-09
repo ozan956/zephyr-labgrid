@@ -1,7 +1,6 @@
 # ESP32 DevKitC behind a USB-UART bridge (CP2102). esptool on the exporter
 # flashes over the same serial port that is used as console, so the console
-# must not be open while flashing: use flash_before: true in the Twister
-# hardware map and close labgrid-pty before a manual west flash.
+# must not be open while flashing. Tag the place zephyr_flash_before=true.
 #
 # {device.devnode} is the tty on the exporter (USBFlashableDevice matched on
 # SUBSYSTEM tty), {address} is the flash offset the runner reads from the
