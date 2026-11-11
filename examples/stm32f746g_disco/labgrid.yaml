@@ -1,5 +1,10 @@
-# labgrid environment used by `west flash -r labgrid` and `labgrid-pty`.
+# labgrid environment used by the labgrid west runner and `labgrid-pty`.
 # The place name comes from LG_PLACE, which the runner sets from --dev-id.
+#
+# Reset the board when the debug server starts, as Zephyr's own OpenOCD
+# configuration for this board does. With some firmware running, OpenOCD
+# can not examine the CPU until the board is reset. Leave debug_commands
+# out to attach to a running board without resetting it.
 targets:
   main:
     resources:
@@ -16,3 +21,6 @@ targets:
           - verify_image {filename}
           - reset run
           - shutdown
+        debug_commands:
+          - init
+          - reset halt
