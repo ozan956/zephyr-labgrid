@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""West runner that flashes and resets through a labgrid place.
+"""West runner that flashes, resets and debugs through a labgrid place.
 
 The runner is a thin client. It uses a place the user holds (``--dev-id``,
 ``$LG_PLACE``, or the one place of the user whose ``zephyr_platform`` tag
@@ -18,11 +18,16 @@ Supported labgrid drivers:
   runs the driver's script with ``{image}`` in ``args`` replaced by the
   remote path of the image and ``{address}`` by the flash offset from the
   build configuration (for raw .bin images).
+- any driver implementing ``DebugProtocol`` (OpenOCDDriver), for ``west debug``,
+  ``attach`` and ``debugserver``: the runner starts the debug server of the
+  driver and connects the GDB of the build to it.
 """
 
 import argparse
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 from runners.core import FileType, RunnerCaps, RunnerConfig, ZephyrBinaryRunner
@@ -41,13 +46,16 @@ from zephyr_labgrid import common  # noqa: E402
 TWISTER_GRACE = 5.0
 AUTO_CONSOLE_WAIT = 30.0
 
+DEBUG_COMMANDS = {'debug', 'debugserver', 'attach'}
+
 
 class LabgridBinaryRunner(ZephyrBinaryRunner):
-    """Flash a Zephyr image through a labgrid place."""
+    """Flash, reset and debug a Zephyr image through a labgrid place."""
 
     def __init__(self, cfg: RunnerConfig, env_file, place, driver_name=None,
                  power_cycle=False, timeout=None, acquire=False, acquire_wait=0.0,
-                 wait_console=None, env_dir=None, ignore_platform=False):
+                 wait_console=None, env_dir=None, ignore_platform=False,
+                 gdb_port=None, telnet_port=None, tcl_port=None):
         super().__init__(cfg)
         self.env_file = env_file
         self.env_dir = env_dir
@@ -59,6 +67,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         self.acquire_wait = acquire_wait
         self.ignore_platform = ignore_platform
         self.wait_console = wait_console
+        self.ports = {'gdb': gdb_port, 'telnet': telnet_port, 'tcl': tcl_port}
         self.flash_before = False   # from the place tags, when they are read
 
     @classmethod
@@ -69,8 +78,8 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
     def capabilities(cls):
         # No reset=True: west would then add --reset to every flash, and the
         # flashers reset the board themselves.
-        return RunnerCaps(commands={'flash', 'reset'}, dev_id=True, file=True,
-                          dry_run=True)
+        return RunnerCaps(commands={'flash', 'reset'} | DEBUG_COMMANDS, dev_id=True,
+                          file=True, dry_run=True)
 
     @classmethod
     def dev_id_help(cls) -> str:
@@ -89,7 +98,15 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         parser.add_argument('--driver', default=None,
                             help='name of the labgrid driver to flash with '
                                  '(default: the BootstrapProtocol driver, '
-                                 'else the FlashScriptDriver of the target)')
+                                 'else the FlashScriptDriver of the target), or '
+                                 'to debug with (default: the DebugProtocol driver)')
+        parser.add_argument('--gdb-port', type=int, default=None,
+                            help='local port of the GDB server (default: 3333 for '
+                                 'west debugserver, else a free port)')
+        parser.add_argument('--telnet-port', type=int, default=None,
+                            help='also start the telnet server, on this local port')
+        parser.add_argument('--tcl-port', type=int, default=None,
+                            help='also start the TCL server, on this local port')
         parser.add_argument('--power-cycle', action='store_true',
                             help='power cycle the place before flashing '
                                  '(needs a PowerProtocol driver)')
@@ -124,7 +141,10 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
                                      acquire=args.acquire,
                                      acquire_wait=args.acquire_wait,
                                      wait_console=args.wait_console,
-                                     ignore_platform=args.ignore_platform)
+                                     ignore_platform=args.ignore_platform,
+                                     gdb_port=args.gdb_port,
+                                     telnet_port=args.telnet_port,
+                                     tcl_port=args.tcl_port)
         # west does not apply --dry-run itself; every runner reads it.
         runner.dry_run = args.dry_run
         return runner
@@ -294,7 +314,7 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         if (tag and target and not self.ignore_platform
                 and not common.platform_matches(tag, target, board)):
             raise RuntimeError(f'place {self.place} is for {tag}, the build is for '
-                               f'{target}. Pass --ignore-platform to flash anyway')
+                               f'{target}. Pass --ignore-platform to use it anyway')
 
         if not self.env_file:
             try:
@@ -314,6 +334,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         if command == 'reset':
             log('would reset via ResetProtocol, the reset script, PowerProtocol or '
                 'OpenOCD')
+            return
+        if command in DEBUG_COMMANDS:
+            log('would start the debug server of the DebugProtocol driver')
             return
         if self.wait_console is None:
             log('would wait for labgrid-pty when one is starting')
@@ -349,6 +372,11 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             self._describe(command)
             return
 
+        if command in DEBUG_COMMANDS:
+            self.logger.info(f'debugging via labgrid place {self.place}')
+            self._run_on_target(command, None)
+            return
+
         if command == 'flash':
             image = self._image()
             self.logger.info(f'flashing {image} via labgrid place {self.place}')
@@ -360,6 +388,55 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
         if command == 'flash':
             self._wait_for_console()
         self._run_on_target(command, image)
+
+    def _debug_target(self, command, target):
+        """Start the debug server of the target, then run GDB for debug and
+        attach, or wait for CTRL+C. The caller stops the server."""
+        from labgrid.driver.exception import ExecutionError
+        from labgrid.exceptions import NoDriverFoundError
+
+        if command != 'debugserver':
+            if not self.cfg.gdb:
+                raise RuntimeError(f'west {command} needs a GDB, the build has none')
+            self.require(self.cfg.gdb)
+
+        # stop the debug server also when west is terminated or the terminal closes
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, lambda signum, frame: sys.exit(128 + signum))
+
+        services = {name: port for name, port in self.ports.items()
+                    if port or name == 'gdb'}
+        if command == 'debugserver':
+            services['gdb'] = services['gdb'] or 3333
+        try:
+            server = target.get_driver('DebugProtocol', name=self.driver_name)
+            ports = server.start(services)
+        except (NoDriverFoundError, KeyError) as e:
+            raise RuntimeError(f'no debug driver in {self.env_file}: {e}') from None
+        except ExecutionError as e:
+            raise RuntimeError(f'no debug server for place {self.place}: '
+                               f'{e.msg}') from None
+
+        if command == 'debugserver':
+            for service, service_ports in ports.items():
+                for port in service_ports:
+                    self.logger.info(f'{service} server of place {self.place} on '
+                                     f'localhost:{port}')
+            self.logger.info('stop it with CTRL+C')
+            try:
+                while server.get_status():
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                return
+            raise RuntimeError(f'the debug server of place {self.place} exited')
+
+        gdb = [self.cfg.gdb, self.cfg.elf_file,
+               '-ex', f'target extended-remote localhost:{ports["gdb"][0]}']
+        if command == 'debug':
+            gdb += ['-ex', 'load']
+        # run_client before Zephyr 4.5
+        run = getattr(self, 'check_call_ignore_sigint', None) or self.run_client
+        run(gdb)
 
     def _check_console_port(self):
         """A board that flashes over its console port can not be flashed or
@@ -416,6 +493,9 @@ class LabgridBinaryRunner(ZephyrBinaryRunner):
             try:
                 if command == 'reset':
                     self._reset_target(target)
+                    return
+                if command in DEBUG_COMMANDS:
+                    self._debug_target(command, target)
                     return
 
                 if self.power_cycle:

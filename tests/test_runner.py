@@ -43,7 +43,7 @@ def test_name_and_caps(runner_mod):
     cls = runner_mod.LabgridBinaryRunner
     assert cls.name() == 'labgrid'
     caps = cls.capabilities()
-    assert caps.commands == {'flash', 'reset'}
+    assert caps.commands == {'flash', 'reset', 'debug', 'debugserver', 'attach'}
     assert caps.dev_id and caps.file and caps.dry_run
     assert not caps.reset       # west would add --reset to every flash
 
@@ -544,3 +544,54 @@ def test_generated_map_needs_no_coordinator_query(runner_mod, runner_config, cle
                ['--dev-id', 'p', '--env', '/e.yaml', '--acquire', '--wait-console', '0'])
     r.do_run('flash')
     common.release_process_places()
+
+
+class FakeDebugServer:
+    """Same methods as labgrid's DebugProtocol."""
+
+    def __init__(self):
+        self.services = None
+
+    def start(self, services):
+        self.services = services
+        return {name: [port or 4000] for name, port in services.items()}
+
+    def get_status(self):
+        raise KeyboardInterrupt
+
+
+@pytest.fixture
+def debug_server(runner, monkeypatch):
+    monkeypatch.setattr('signal.signal', lambda signum, handler: None)
+    server = FakeDebugServer()
+    server.target = FakeTarget({'DebugProtocol': server})
+    fake_environment(monkeypatch, server.target)
+    monkeypatch.setattr(runner, 'require', lambda program: program)
+    runner.cfg = runner.cfg._replace(gdb='gdb')
+    runner.gdb = []
+    monkeypatch.setattr(runner, 'check_call_ignore_sigint', runner.gdb.extend, raising=False)
+    return server
+
+
+@pytest.mark.parametrize('command, load', [('debug', ['-ex', 'load']), ('attach', [])])
+def test_debug_runs_gdb_on_the_debug_server(runner, debug_server, command, load):
+    runner.do_run(command)
+    assert debug_server.services == {'gdb': None}
+    assert runner.gdb == ['gdb', runner.cfg.elf_file, '-ex',
+                          'target extended-remote localhost:4000'] + load
+    assert debug_server.target.cleaned
+
+
+def test_debugserver_starts_the_services(runner, debug_server, caplog):
+    runner.ports['telnet'] = 4444
+    with caplog.at_level('INFO'):
+        runner.do_run('debugserver')
+    assert debug_server.services == {'gdb': 3333, 'telnet': 4444}
+    assert 'gdb server of place p on localhost:3333' in caplog.text
+    assert runner.gdb == []
+
+
+def test_debug_needs_a_debug_server(runner, debug_server, monkeypatch):
+    fake_environment(monkeypatch, FakeTarget({}))
+    with pytest.raises(RuntimeError, match='no debug driver in /e.yaml'):
+        runner.do_run('debug')
