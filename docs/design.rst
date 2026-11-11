@@ -149,6 +149,22 @@ West does not apply ``--dry-run`` itself, so the runner reads it in ``do_create`
 and then only logs what it would do, without contacting the coordinator
 for anything but the tag lookup.
 
+Debugging
+---------
+
+``west debug``, ``attach`` and ``debugserver`` use labgrid's
+``DebugProtocol``. The runner takes the driver named by ``--driver``, else
+the one driver with that protocol, and calls ``start()`` with the services
+to start, ``gdb`` and with ``--telnet-port`` or ``--tcl-port`` also
+``telnet`` and ``tcl``. It gets their ports on the local machine back and
+starts the GDB of the build with ``target extended-remote localhost:PORT``,
+plus ``load`` for ``west debug``. As with Zephyr's own OpenOCD runner, the
+GDB server writes the image and no flash driver takes part.
+``target.cleanup()`` stops the debug server.
+
+While the debug server runs, the probe is busy and a second OpenOCD exits
+without an error message. The runner does not detect that.
+
 Place locks
 -----------
 
@@ -268,6 +284,4 @@ From ``scripts/pylib/twister/twisterlib/handlers.py``.
 -  ``west flash -H`` imports module runners only after it prints the runner
    help, so it does not know ``labgrid``.
 
-What is missing is listed in :ref:`supported`. ``west debug`` needs a GDB
-server mode in labgrid's ``OpenOCDDriver`` and port forwarding to the
-client, planned as a labgrid contribution.
+What is missing is listed in :ref:`supported`.

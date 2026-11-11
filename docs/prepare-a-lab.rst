@@ -167,6 +167,33 @@ When only a vendor tool can reset the board, add the command as that second
          script: reset-script
          args: ["{device.path}"]
 
+.. _debug-driver:
+
+Debugging
+~~~~~~~~~
+
+``west debug``, ``west attach`` and ``west debugserver`` use the driver of
+the environment file that has a debug server. ``OpenOCDDriver`` has one.
+
+.. code:: yaml
+
+   drivers:
+     SerialDriver: {}
+     OpenOCDDriver:
+       board_config: stm32f746g-disco.cfg
+       debug_commands:
+         - init
+         - reset halt
+
+``debug_commands`` are the OpenOCD commands that start the debug server,
+``init`` alone when they are left out. Add a reset when the board needs one
+before OpenOCD can talk to it. It then also resets the board for
+``west attach``, which otherwise leaves the running program alone.
+
+The same ``OpenOCDDriver`` flashes and debugs. The debug server runs on the
+exporter host, listens there on the loopback interface only, and reaches the
+user through SSH. It stops when the user ends the session.
+
 Examples in the repository
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

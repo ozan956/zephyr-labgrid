@@ -67,8 +67,8 @@ The documentation is at https://ozandurgut.com/zephyr-labgrid/.
 This is an experimental release (0.1). It needs Zephyr 4.4 or newer,
 Python 3.11 or newer, labgrid master and a Linux host. It is tested with
 Zephyr 4.5 on an STM32F746G-DISCO, an ESP32-DevKitC and an Alif Ensemble
-E8 DevKit. `west debug` and several consoles per board are not supported
-yet, see [What is supported](https://ozandurgut.com/zephyr-labgrid/flash-and-test/#supported).
+E8 DevKit. Several consoles per board are not supported yet, see
+[What is supported](https://ozandurgut.com/zephyr-labgrid/flash-and-test/#supported).
 
 ## Contributing
 

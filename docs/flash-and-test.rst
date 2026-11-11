@@ -39,7 +39,7 @@ Your routine, next to a board on your desk
      - ``labgrid-pty``
    * - Debug
      - ``west debug``
-     - not yet
+     - ``west debug -r labgrid``, see :ref:`debug`
    * - Twister on your board
      - ``west twister -p BOARD --device-testing --device-serial /dev/ttyACM0 -T tests``
      - ``west twister -p BOARD --device-testing --device-serial-pty labgrid-pty --west-runner labgrid -T tests``
@@ -135,8 +135,8 @@ with it and give it back afterwards.
    $ labgrid-client -p stm32f746g-disco acquire
    $ labgrid-client -p stm32f746g-disco release
 
-``west flash``, ``west reset`` and ``labgrid-pty`` never take a place for
-you. When you hold none for the board, they say which places are free
+``west flash``, ``west reset``, ``west debug`` and ``labgrid-pty`` never
+take a place for you. When you hold none for the board, they say which places are free
 and print the ``acquire`` command.
 
 .. _check-output:
@@ -235,6 +235,60 @@ A board that flashes over its console port, like an ESP32 dev kit, cannot
 be flashed or reset while ``labgrid-pty`` has its console open. Close the
 console first.
 
+.. _debug:
+
+Debug
+~~~~~
+
+``west debug`` writes the image and stops the board at its entry point, in
+the GDB of your toolchain. ``west attach`` connects to the board without
+writing anything. The environment file of the lab owner decides whether the
+board is reset first.
+
+.. code:: console
+
+   $ west debug -r labgrid
+   $ west attach -r labgrid
+
+The debug probe stays on the exporter. labgrid starts the debug server there
+and forwards its ports to your machine through SSH. CTRL+C in GDB interrupts
+the board, as usual. When GDB exits, the debug server stops.
+
+``west debugserver`` only starts the debug server and prints its ports, for
+an IDE or a GDB that you start yourself. It runs until CTRL+C.
+
+.. code:: console
+
+   $ west debugserver -r labgrid -- --telnet-port 4444
+   -- west debugserver: using runner labgrid
+   debugging via labgrid place stm32f746g-disco
+   gdb server of place stm32f746g-disco on localhost:3333
+   telnet server of place stm32f746g-disco on localhost:4444
+   stop it with CTRL+C
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Option
+     - Meaning
+   * - ``--gdb-port PORT``
+     - the port on your machine. ``west debugserver`` uses 3333, the other
+       commands a free port.
+   * - ``--telnet-port PORT``, ``--tcl-port PORT``
+     - also start the telnet or the TCL server of OpenOCD, on that port of
+       your machine
+   * - ``--driver NAME``
+     - the labgrid driver with the debug server, when the environment file
+       has several
+
+The debug server keeps the debug probe busy. Do not flash or reset the place
+in the meantime, OpenOCD would fail without saying why. Write a new image
+with ``load`` in GDB instead, and reset the board with ``monitor reset halt``.
+
+Debugging needs an environment file whose driver has a debug server, see
+:ref:`debug-driver`.
+
 .. _default-runner:
 
 Make labgrid the default runner
@@ -247,6 +301,9 @@ build.
 
    $ west build -b stm32f746g_disco zephyr/samples/hello_world -- -DBOARD_FLASH_RUNNER=labgrid
    $ west flash
+
+``-DBOARD_DEBUG_RUNNER=labgrid`` does the same for ``west debug``,
+``west attach`` and ``west debugserver``.
 
 For sysbuild builds keep passing ``-r labgrid``, because the option does
 not reach the images of a sysbuild build.
@@ -332,6 +389,12 @@ If something goes wrong
 -  ``no flash driver (BootstrapProtocol or FlashScriptDriver)``. The
    environment file has no flash driver, or the place lacks the probe
    resource. Ask the lab owner.
+-  ``no debug driver in ...``. The environment file has no driver that can
+   debug, or several and you must pick one with ``--driver``, see
+   :ref:`debug-driver`.
+-  ``no debug server for place ...`` with the output of OpenOCD. When that
+   output ends without an error, another program holds the debug probe,
+   often a debug session that is still open.
 -  ``the serial server did not answer the RFC2217 purge request``. The
    exporter runs ser2net 4.6.0, and ``labgrid-pty`` continues without
    purge, see :ref:`check-exporter-host`.
@@ -363,8 +426,10 @@ What is supported
        Sysbuild with MCUboot is tested on an ESP32-DevKitC.
    * - ``west reset``
      - yes, through ResetProtocol, a reset script, PowerProtocol or OpenOCD
-   * - ``west debug``, ``debugserver``, ``attach``, ``rtt``
-     - not yet, it needs a GDB server in labgrid
+   * - ``west debug``, ``debugserver``, ``attach``
+     - yes, with ``OpenOCDDriver``. Tested on an STM32F746G-DISCO.
+   * - ``west rtt``
+     - no
    * - ``west flash --erase``
      - no
    * - Flash drivers
